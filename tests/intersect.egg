@@ -1,0 +1,94 @@
+(datatype Context
+  (Ctx Rational))
+
+(datatype Math
+  ; Ground terms
+  (Num Context Rational)
+  (Var Context String)
+  (Add Context Math Math)
+  (Mul Context Math Math)
+  (Sqrt Context Math)
+  (Ln Context Math))
+
+
+(datatype MyId
+  (Product Math Math))
+
+
+
+
+(relation intersect (Context Context Context))
+(relation makeSet (MyId Math))
+
+
+;;; Intersection rules
+(rule ((makeSet id m1)
+       (makeSet id m2))
+      ((union m1 m2)))
+
+(rule ((= e1 (Num ctx1 n))
+       (= e2 (Num ctx2 n))
+       (intersect ctx1 ctx2 res))
+      ((makeSet (Product e1 e2)
+       (Num res n))))
+
+(rule ((= e1 (Var ctx1 v))
+       (= e2 (Var ctx2 v))
+       (intersect ctx1 ctx2 res))
+      ((makeSet (Product e1 e2)
+               (Var res v))))
+
+(rule ((= e1 (Add ctx1 m1 m2))
+       (= e2 (Add ctx2 m3 m4))
+       (intersect ctx1 ctx2 res)
+       (makeSet (Product m1 m3) child1)
+       (makeSet (Product m2 m4) child2))
+      ((makeSet (Product e1 e2)
+       (Add res child1 child2))))
+
+(rule ((= e1 (Mul ctx1 m1 m2))
+       (= e2 (Mul ctx2 m3 m4))
+       (intersect ctx1 ctx2 res)
+       (makeSet (Product m1 m3) child1)
+       (makeSet (Product m2 m4) child2))
+      ((makeSet (Product e1 e2)
+       (Mul res child1 child2))))
+
+(rule ((= e1 (Sqrt ctx1 m1))
+       (= e2 (Sqrt ctx2 m2))
+       (intersect ctx1 ctx2 res)
+       (makeSet (Product m1 m2) child))
+      ((makeSet (Product e1 e2)
+        (Sqrt res child))))
+
+(rule ((= e1 (Ln ctx1 m1))
+       (= e2 (Ln ctx2 m2))
+       (intersect ctx1 ctx2 res)
+       (makeSet (Product m1 m2) child))
+      ((makeSet (Product e1 e2)
+        (Ln res child))))
+
+
+;; Terms
+
+(define ctx1 (Ctx (rational 1 1)))
+(define ctx2 (Ctx (rational 2 1)))
+(define ctx3 (Ctx (rational 3 1)))
+(define e1-a (Var ctx1 "a"))
+(define e1-b (Var ctx1 "b"))
+(define e1-lna (Ln ctx1 e1-a))
+(define e1-lnb (Ln ctx1 e1-b))
+(union e1-lna e1-lnb)
+
+(define e2-a (Var ctx2 "a"))
+(define e2-b (Var ctx2 "b"))
+(define e2-lna (Ln ctx2 e2-a))
+(define e2-lnb (Ln ctx2 e2-b))
+(union e2-a e2-b)
+
+(define inter (intersect ctx1 ctx2 ctx3))
+
+(run 10)
+
+(check (= (Ln ctx3 (Var ctx3 "a")) (Ln ctx3 (Var ctx3 "b"))))
+(check (!= (Var ctx3 "a") (Var ctx3 "b")))
