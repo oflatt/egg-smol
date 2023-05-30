@@ -182,6 +182,30 @@ impl PrimitiveLike for Ctor {
     }
 }
 
+pub(crate) struct TermOrdering {}
+
+impl PrimitiveLike for TermOrdering {
+    fn name(&self) -> Symbol {
+        "ordering-less".into()
+    }
+
+    fn accept(&self, types: &[ArcSort]) -> Option<ArcSort> {
+        match types {
+            [a, b] if a.name() == b.name() => Some(a.clone()),
+            _ => None,
+        }
+    }
+
+    fn apply(&self, values: &[Value]) -> Option<Value> {
+        assert_eq!(values.len(), 2);
+        if values[0] < values[1] {
+            Some(values[0])
+        } else {
+            Some(values[1])
+        }
+    }
+}
+
 struct Insert {
     name: Symbol,
     map: Arc<MapSort>,

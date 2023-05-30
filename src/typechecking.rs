@@ -47,6 +47,7 @@ impl Default for TypeInfo {
         res.presorts.insert("Map".into(), MapSort::make_sort);
         res.presorts.insert("Set".into(), SetSort::make_sort);
         res.presorts.insert("Vec".into(), SetSort::make_sort);
+        res.add_primitive(TermOrdering {});
         res
     }
 }
