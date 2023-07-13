@@ -20,6 +20,12 @@ pub(crate) fn concat_vecs<T>(to: &mut Vec<T>, mut from: Vec<T>) {
     to.extend(from);
 }
 
+pub(crate) fn vec_append<T>(v1: Vec<T>, v2: Vec<T>) -> Vec<T> {
+    let mut res = v1;
+    res.extend(v2);
+    res
+}
+
 pub(crate) struct ListDisplay<'a, TS>(pub TS, pub &'a str);
 
 impl<'a, TS> Display for ListDisplay<'a, TS>

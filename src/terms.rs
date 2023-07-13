@@ -406,7 +406,7 @@ impl ProofState {
             self.parent_ruleset_name(),
             self.rebuilding_ruleset_name()
         );
-        self.parse_program(&str).unwrap().into_iter().collect()
+        self.parse_program(&str).unwrap()
     }
 
     pub fn parse_program(&self, input: &str) -> Result<Vec<Command>, Error> {
