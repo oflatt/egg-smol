@@ -17,27 +17,23 @@ impl ProofState {
     fn proof_header(&self) -> Vec<Command> {
         let underscores = "_".repeat(self.desugar.number_underscores);
         let proofheader = include_str!("proofheader.egg");
-        let replaced = proofheader.replace("_", &underscores);
+        let replaced = proofheader.replace('_', &underscores);
+        eprintln!("{}", replaced);
         self.parse_program(&replaced).unwrap()
     }
 
     fn make_proof_type(&self, sort: &Symbol) -> String {
         let underscores = "_".repeat(self.desugar.number_underscores);
         let proof_header = include_str!("prooftype.egg");
-        let replaced = proof_header.replace("_", &underscores);
-        replaced.replace("^", &sort.to_string())
+        let replaced = proof_header.replace('_', &underscores);
+        replaced.replace('^', &sort.to_string())
     }
 
-    fn get_proof_type(&self, sort: &Symbol) -> Symbol {
-        format!(
-            "{}Proof{}",
-            sort,
-            "_".repeat(self.desugar.number_underscores)
-        )
-        .into()
+    fn get_proof_type(&self) -> Symbol {
+        format!("Proof{}", "_".repeat(self.desugar.number_underscores)).into()
     }
 
-    fn proof_func_name(&self, name: &Symbol) -> Symbol {
+    fn proof_func_name(&self, name: Symbol) -> Symbol {
         format!(
             "{}_Proof{}",
             name,
@@ -48,10 +44,10 @@ impl ProofState {
 
     fn make_proof_table(&self, fdecl: &FunctionDecl) -> Command {
         Command::Function(FunctionDecl {
-            name: self.proof_func_name(&fdecl.name),
+            name: self.proof_func_name(fdecl.name),
             schema: Schema {
                 input: fdecl.schema.input.clone(),
-                output: self.get_proof_type(&fdecl.schema.output),
+                output: self.get_proof_type(),
             },
             default: None,
             merge: Some(Expr::Var("new".into())),
@@ -61,20 +57,50 @@ impl ProofState {
         })
     }
 
+    fn original(&self, var: Symbol) -> String {
+        let underscores = "_".repeat(self.desugar.number_underscores);
+        let var_type = self.type_info.lookup(self.current_ctx, var).unwrap();
+        format!("({var_type}Original{underscores} {var})")
+    }
+
+    fn add_proofs_action_original(&self, action: &NormAction) -> Vec<Command> {
+        match action {
+            NormAction::Delete(..) | NormAction::Extract(..) | NormAction::Panic(..) => {
+                vec![]
+            }
+            NormAction::Let(lhs, _expr) => self.add_proof_of(*lhs, self.original(*lhs)),
+            NormAction::Union(lhs, rhs) => {
+                panic!("Union should have been desugared by term encoding");
+            }
+            NormAction::
+        }
+    }
+
+    fn add_proof_of(&self, var: Symbol, proof: String) -> Vec<Command> {
+        let var_type = self.type_info.lookup(self.current_ctx, var).unwrap();
+        let proof_func = self.proof_func_name(var_type.name());
+        self.parse_program(&format!("(set ({proof_func} {var}) {proof})"))
+            .unwrap()
+    }
+
     fn add_proofs_command(&self, command: NCommand) -> Vec<Command> {
-        match command {
+        match &command {
             NCommand::Function(fdecl) => {
-                vec![command.to_command(), self.make_proof_table(&fdecl)]
+                vec![command.to_command(), self.make_proof_table(fdecl)]
             }
             NCommand::Sort(sort, _pre) => vec_append(
                 vec![command.to_command()],
-                self.parse_program(&self.make_proof_type(&sort)).unwrap(),
+                self.parse_program(&self.make_proof_type(sort)).unwrap(),
+            ),
+            NCommand::NormAction(action) => vec_append(
+                vec![command.to_command()],
+                self.add_proofs_action_original(action),
             ),
             _ => vec![command.to_command()],
         }
     }
 
-    fn add_proofs(&mut self, program: Vec<NormCommand>) -> Vec<Command> {
+    pub(crate) fn add_proofs(&mut self, program: Vec<NormCommand>) -> Vec<Command> {
         let mut res = vec![];
 
         if !self.proof_header_added {

@@ -1163,38 +1163,36 @@ impl EGraph {
         }
 
         // reset type info
-        self.proof_state.type_info = type_info_before;
+        self.proof_state.type_info = type_info_before.clone();
         self.proof_state.type_info.typecheck_program(&program)?;
         if stop == CompilerPassStop::TypecheckTermEncoding {
             return Ok(program);
         }
 
-        // proofs require type info, so
-        // we need to pass in the desugar
-        let proofs = self.proof_state.add_proofs(program);
-        eprintln!("Proofs: {}", ListDisplay(&proofs, "\n"));
+        if self.proofs_enabled {
+            let proofs = self.proof_state.add_proofs(program);
 
-        let final_desugared = self
-            .proof_state
-            .desugar
-            .desugar_program(proofs, false, false)?;
+            program = self
+                .proof_state
+                .desugar
+                .desugar_program(proofs, false, false)?;
 
-        if stop == CompilerPassStop::Proofs {
-            return Ok(final_desugared);
+            if stop == CompilerPassStop::Proofs {
+                return Ok(program);
+            }
+
+            // revert the type information again
+            self.proof_state.type_info = type_info_before;
+            self.proof_state.type_info.typecheck_program(&program)?;
+
+            if stop == CompilerPassStop::TypecheckProofs {
+                return Ok(program);
+            }
+
+            Ok(program)
+        } else {
+            Ok(program)
         }
-
-        // revert the type information again
-        self.proof_state.type_info = type_info_before;
-        self.proof_state
-            .type_info
-            .typecheck_program(&final_desugared)?;
-        program = final_desugared;
-
-        if stop == CompilerPassStop::TypecheckProofs {
-            return Ok(program);
-        }
-
-        Ok(program)
     }
 
     pub fn run_program(&mut self, program: Vec<Command>) -> Result<Vec<String>, Error> {
