@@ -16,26 +16,27 @@ impl ProofState {
     pub(crate) fn union(&self, type_name: Symbol, lhs: &str, rhs: &str) -> String {
         let pname = self.parent_name(type_name);
         format!(
-            "(set ({pname} ({pname} {lhs})) ({pname} {rhs}))
-             (set ({pname} ({pname} {rhs})) ({pname} {lhs}))",
+            "(set ({pname}
+                   (ordering-max {lhs} {rhs}))
+                  (ordering-min {lhs} {rhs}))",
         )
     }
 
     fn make_parent_table(&self, name: Symbol) -> Vec<Command> {
         let pname = self.parent_name(name);
-        vec![
-            format!("(function {pname} ({name}) {name} :merge (ordering-less old new))"),
-            format!(
-                "(rule ((= ({pname} a) b)
-                        (= ({pname} b) c))
-                       ((set ({pname} a) c))
-                            :ruleset {})",
-                self.parent_ruleset_name()
-            ),
-        ]
-        .into_iter()
-        .flat_map(|s| self.desugar.parser.parse(&s).unwrap())
-        .collect()
+        let union_old_new = self.union(name, "old", "new");
+        self.parse_program(&format!(
+            "(function {pname} ({name}) {name} 
+                        :on_merge ({union_old_new})
+                        :merge (ordering-min old new)
+                        )
+            (rule ((= ({pname} a) b)
+                   (= ({pname} b) c))
+                  ((set ({pname} a) c))
+                   :ruleset {})",
+            self.parent_ruleset_name()
+        ))
+        .unwrap()
     }
 
     fn make_canonicalize_func(&mut self, fdecl: &FunctionDecl) -> Vec<Command> {
@@ -227,15 +228,11 @@ impl ProofState {
                     self.parse_actions(
                         vec![self.init(func_type.output.name(), &expr.to_string())]
                             .into_iter()
-                            .chain(
-                                self.union(
-                                    func_type.output.name(),
-                                    &expr.to_string(),
-                                    &var.to_string(),
-                                )
-                                .split('\n')
-                                .map(|s| s.to_string()),
-                            )
+                            .chain(vec![self.union(
+                                func_type.output.name(),
+                                &expr.to_string(),
+                                &var.to_string(),
+                            )])
                             .collect(),
                     )
                 } else {
@@ -248,12 +245,11 @@ impl ProofState {
                 assert_eq!(lhs_type.name(), rhs_type.name());
                 assert!(lhs_type.is_eq_sort());
 
-                self.parse_actions(
-                    self.union(lhs_type.name(), &lhs.to_string(), &rhs.to_string())
-                        .split('\n')
-                        .map(|s| s.to_string())
-                        .collect(),
-                )
+                self.parse_actions(vec![self.union(
+                    lhs_type.name(),
+                    &lhs.to_string(),
+                    &rhs.to_string(),
+                )])
             }
         }
     }

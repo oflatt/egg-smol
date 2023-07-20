@@ -536,7 +536,7 @@ impl<'a> ExprChecker<'a> for ActionChecker<'a> {
                     .unwrap(),
             ))
         } else if let Some((sort, v)) = self.egraph().global_bindings.get(&sym) {
-            self.instructions.push(Instruction::Value(v.clone()));
+            self.instructions.push(Instruction::Value(*v));
             Ok(((), sort.clone()))
         } else if let Some((i, _, ty)) = self.locals.get_full(&sym) {
             self.instructions.push(Instruction::Load(Load::Stack(i)));
@@ -622,21 +622,16 @@ trait ExprChecker<'a> {
             }
             Expr::Var(sym) => self.infer_var(*sym),
             Expr::Call(sym, args) => {
-                if let Some(f) = self.egraph().functions.get(sym) {
-                    if f.schema.input.len() != args.len() {
-                        return Err(TypeError::Arity {
-                            expr: expr.clone(),
-                            expected: f.schema.input.len(),
-                        });
-                    }
+                if let Some(functype) = self.egraph().proof_state.type_info.func_types.get(sym) {
+                    assert!(functype.input.len() == args.len());
 
                     let mut ts = vec![];
-                    for (expected, arg) in f.schema.input.iter().zip(args) {
+                    for (expected, arg) in functype.input.iter().zip(args) {
                         ts.push(self.check_expr(arg, expected.clone())?);
                     }
 
                     let t = self.do_function(*sym, ts);
-                    Ok((t, f.schema.output.clone()))
+                    Ok((t, functype.output.clone()))
                 } else if let Some(prims) = self.egraph().proof_state.type_info.primitives.get(sym)
                 {
                     let mut ts = Vec::with_capacity(args.len());
@@ -659,7 +654,7 @@ trait ExprChecker<'a> {
                         inputs: tys.into_iter().map(|t| t.name()).collect(),
                     })
                 } else {
-                    Err(TypeError::Unbound(*sym))
+                    panic!("Unbound function {}", sym);
                 }
             }
         }
@@ -754,7 +749,7 @@ impl EGraph {
         for instr in &program.0 {
             match instr {
                 Instruction::Iteration => stack.push(self.iteration.into()),
-                Instruction::Value(v) => stack.push(v.clone()),
+                Instruction::Value(v) => stack.push(*v),
                 Instruction::Load(load) => match load {
                     Load::Stack(idx) => stack.push(stack[*idx]),
                     Load::Subst(idx) => stack.push(subst[*idx]),
@@ -840,16 +835,6 @@ impl EGraph {
 
                     if let Some(old_value) = old_value {
                         if new_value != old_value {
-                            let tag = old_value.tag;
-                            if let Some(prog) = function.merge.on_merge.clone() {
-                                let values = [old_value, new_value];
-                                // XXX: we get an error if we pass the current
-                                // stack and then truncate it to the old length.
-                                // Why?
-                                self.run_actions(&mut Vec::new(), &values, &prog, true)?;
-                            }
-                            // re-borrow
-                            let function = self.functions.get_mut(f).unwrap();
                             let merged: Value = match function.merge.merge_vals.clone() {
                                 MergeFn::AssertEq => {
                                     return Err(Error::MergeError(*f, new_value, old_value));
@@ -866,10 +851,21 @@ impl EGraph {
                                     result
                                 }
                             };
-                            // re-borrow
                             let args = &stack[new_len..];
                             let function = self.functions.get_mut(f).unwrap();
                             function.insert(args, merged, self.timestamp);
+
+                            if new_value != old_value {
+                                // re-borrow
+                                let function = self.functions.get_mut(f).unwrap();
+                                if let Some(prog) = function.merge.on_merge.clone() {
+                                    let values = [old_value, new_value];
+                                    // XXX: we get an error if we pass the current
+                                    // stack and then truncate it to the old length.
+                                    // Why?
+                                    self.run_actions(&mut Vec::new(), &values, &prog, true)?;
+                                }
+                            }
                         }
                     } else {
                         function.insert(args, new_value, self.timestamp);

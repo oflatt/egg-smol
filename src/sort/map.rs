@@ -76,22 +76,15 @@ impl Sort for MapSort {
         self.key.is_eq_sort() || self.value.is_eq_sort()
     }
 
-    fn foreach_tracked_values<'a>(&'a self, value: &'a Value, mut f: Box<dyn FnMut(Value) + 'a>) {
-        // TODO: Potential duplication of code
+    fn inner_values(&self, value: &Value) -> Vec<(&ArcSort, Value)> {
         let maps = self.maps.lock().unwrap();
         let map = maps.get_index(value.bits as usize).unwrap();
-
-        if self.key.is_eq_sort() {
-            for key in map.keys() {
-                f(*key)
-            }
+        let mut result = Vec::new();
+        for (k, v) in map.iter() {
+            result.push((&self.key, *k));
+            result.push((&self.value, *v));
         }
-
-        if self.value.is_eq_sort() {
-            for value in map.values() {
-                f(*value)
-            }
-        }
+        result
     }
 
     fn canonicalize(&self, _value: &mut Value, _unionfind: &UnionFind) -> bool {
@@ -207,11 +200,11 @@ struct Ctor {
     map: Arc<MapSort>,
 }
 
-pub(crate) struct TermOrdering {}
+pub(crate) struct TermOrderingMin {}
 
-impl PrimitiveLike for TermOrdering {
+impl PrimitiveLike for TermOrderingMin {
     fn name(&self) -> Symbol {
-        "ordering-less".into()
+        "ordering-min".into()
     }
 
     fn accept(&self, types: &[ArcSort]) -> Option<ArcSort> {
@@ -224,6 +217,30 @@ impl PrimitiveLike for TermOrdering {
     fn apply(&self, values: &[Value], _egraph: &EGraph) -> Option<Value> {
         assert_eq!(values.len(), 2);
         if values[0] < values[1] {
+            Some(values[0])
+        } else {
+            Some(values[1])
+        }
+    }
+}
+
+pub(crate) struct TermOrderingMax {}
+
+impl PrimitiveLike for TermOrderingMax {
+    fn name(&self) -> Symbol {
+        "ordering-max".into()
+    }
+
+    fn accept(&self, types: &[ArcSort]) -> Option<ArcSort> {
+        match types {
+            [a, b] if a.name() == b.name() => Some(a.clone()),
+            _ => None,
+        }
+    }
+
+    fn apply(&self, values: &[Value], _egraph: &EGraph) -> Option<Value> {
+        assert_eq!(values.len(), 2);
+        if values[0] > values[1] {
             Some(values[0])
         } else {
             Some(values[1])

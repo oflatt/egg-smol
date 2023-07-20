@@ -2,8 +2,8 @@ pub mod ast;
 mod extract;
 mod function;
 mod gj;
-mod proofchecker;
 mod proofs;
+mod serialize;
 pub mod sort;
 mod termdag;
 mod terms;
@@ -17,7 +17,7 @@ use extract::Extractor;
 use hashbrown::hash_map::Entry;
 use index::ColumnIndex;
 use instant::{Duration, Instant};
-use proofchecker::check_proof;
+pub use serialize::SerializeConfig;
 use sort::*;
 use termdag::{Term, TermDag};
 use thiserror::Error;
@@ -34,7 +34,6 @@ use std::fs::File;
 use std::hash::Hash;
 use std::io::Read;
 use std::iter::once;
-use std::mem;
 use std::ops::{Deref, Range};
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -66,7 +65,6 @@ pub struct RunReport {
     pub updated: bool,
     pub search_time: Duration,
     pub apply_time: Duration,
-    pub rebuild_time: Duration,
 }
 
 #[derive(Debug, Clone)]
@@ -83,7 +81,6 @@ impl RunReport {
             updated: self.updated || other.updated,
             search_time: self.search_time + other.search_time,
             apply_time: self.apply_time + other.apply_time,
-            rebuild_time: self.rebuild_time + other.rebuild_time,
         }
     }
 }
@@ -283,10 +280,6 @@ impl EGraph {
         }
     }
 
-    pub fn union(&mut self, id1: Id, id2: Id, sort: Symbol) -> Id {
-        self.unionfind.union(id1, id2, sort)
-    }
-
     fn debug_assert_invariants(&self) {
         #[cfg(debug_assertions)]
         for (name, function) in self.functions.iter() {
@@ -353,82 +346,6 @@ impl EGraph {
         } else {
             value
         }
-    }
-
-    pub fn rebuild_nofail(&mut self) -> usize {
-        match self.rebuild() {
-            Ok(updates) => updates,
-            Err(e) => {
-                panic!("Unsoundness detected during rebuild. Exiting: {e}")
-            }
-        }
-    }
-
-    // Rebuild currently handles merge functions
-    // and custom container sorts
-    // TODO desugar merge functions
-    // TODO support terms and proofs for custom container sorts
-    pub fn rebuild(&mut self) -> Result<usize, Error> {
-        self.unionfind.clear_recent_ids();
-        let mut updates = 0;
-        loop {
-            let new = self.rebuild_one()?;
-            log::debug!("{new} rebuilds?");
-            self.unionfind.clear_recent_ids();
-            updates += new;
-            if new == 0 {
-                break;
-            }
-        }
-        self.debug_assert_invariants();
-        Ok(updates)
-    }
-
-    fn rebuild_one(&mut self) -> Result<usize, Error> {
-        let mut new_unions = 0;
-        let mut deferred_merges = Vec::new();
-        for function in self.functions.values_mut() {
-            let (unions, merges) = function.rebuild(&mut self.unionfind, self.timestamp)?;
-            if !merges.is_empty() {
-                deferred_merges.push((function.decl.name, merges));
-            }
-            // new term encoding, never union
-            assert!(unions == 0);
-            new_unions += unions;
-        }
-        for (func, merges) in deferred_merges {
-            new_unions += self.apply_merges(func, &merges);
-        }
-        Ok(new_unions)
-    }
-
-    fn apply_merges(&mut self, func: Symbol, merges: &[DeferredMerge]) -> usize {
-        let mut stack = Vec::new();
-        let mut function = self.functions.get_mut(&func).unwrap();
-        let n_unions = self.unionfind.n_unions();
-        let merge_prog = match &function.merge.merge_vals {
-            MergeFn::Expr(e) => Some(e.clone()),
-            MergeFn::AssertEq | MergeFn::Union => None,
-        };
-
-        for (inputs, old, new) in merges {
-            if let Some(prog) = function.merge.on_merge.clone() {
-                self.run_actions(&mut stack, &[*old, *new], &prog, true)
-                    .unwrap();
-                function = self.functions.get_mut(&func).unwrap();
-                stack.clear();
-            }
-            if let Some(prog) = &merge_prog {
-                // TODO: error handling?
-                self.run_actions(&mut stack, &[*old, *new], prog, true)
-                    .unwrap();
-                let merged = stack.pop().expect("merges should produce a value");
-                stack.clear();
-                function = self.functions.get_mut(&func).unwrap();
-                function.insert(inputs, merged, self.timestamp);
-            }
-        }
-        self.unionfind.n_unions() - n_unions + function.clear_updates()
     }
 
     pub fn declare_function(&mut self, decl: &FunctionDecl) -> Result<(), Error> {
@@ -584,7 +501,6 @@ impl EGraph {
     pub fn run_rules_once(&mut self, config: &NormRunConfig, report: &mut RunReport) {
         let NormRunConfig { ruleset, until } = config;
 
-        self.rebuild_nofail();
         if let Some(facts) = until {
             if self.check_facts(facts).is_ok() {
                 log::info!(
@@ -598,11 +514,7 @@ impl EGraph {
         let subreport = self.step_rules(*ruleset);
         *report = report.union(&subreport);
 
-        let rebuild_start = Instant::now();
-        let updates = self.rebuild_nofail();
         log::debug!("database size: {}", self.num_tuples());
-        log::debug!("Made {updates} updates)");
-        report.rebuild_time += rebuild_start.elapsed();
         self.timestamp += 1;
 
         if self.num_tuples() > self.node_limit {
@@ -874,16 +786,10 @@ impl EGraph {
     }
 
     fn run_command(&mut self, command: NCommand, should_run: bool) -> Result<String, Error> {
-        let pre_rebuild = Instant::now();
+        self.debug_assert_invariants();
+
         self.extract_report = None;
         self.run_report = None;
-        let rebuild_num = self.rebuild()?;
-        if rebuild_num > 0 {
-            log::info!(
-                "Rebuild before command: {:10.6}s",
-                pre_rebuild.elapsed().as_millis()
-            );
-        }
         let res = Ok(match command {
             NCommand::SetOption { name, value } => {
                 let str = format!("Set option {} to {}", name, value);
@@ -924,10 +830,7 @@ impl EGraph {
                     "Skipping check.".into()
                 }
             }
-            NCommand::CheckProof => {
-                check_proof(self);
-                "Checked proof.".into()
-            }
+            NCommand::CheckProof => "TODO implement proofs".into(),
             NCommand::NormAction(action) => {
                 if should_run {
                     match &action {
@@ -1217,6 +1120,7 @@ impl EGraph {
         Ok(msgs)
     }
 
+    #[allow(dead_code)]
     fn bad_find_value(&self, value: Value) -> Value {
         value
     }
