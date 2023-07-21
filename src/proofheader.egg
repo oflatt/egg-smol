@@ -1,6 +1,9 @@
 (sort ProofList_)
 (sort Proof_)
+(sort ProofTerm_)
 
+
+(function ProofOf_ (ProofTerm_) Proof_ :merge new)
 
 ;; ProofList definitions
 (function Cons_ (Proof_ ProofList_) ProofList_)
@@ -8,13 +11,5 @@
 (let Null_ (ProofNull_))
 
 
-;; given proofs for x1 = x2, x2 = x3, ..., xn = xn+1
-;; proves that x1 = xn+1 and x1 and xn+1 exist
-(function Transitivity_ (ProofList_) Proof_)
-
-;; given x1 = x2, proves x2 = x1
-(function Flip_ (Proof_) Proof_)
-
-;; given a proof for a term t1, proves that t1 is equal
-;; to another term t2 via equality proofs on their children
-(function Congruence_ (Proof_ ProofList_) Proof_)
+(function Original_ (ProofTerm_) Proof_)
+(function Rule_ (ProofList_ String) Proof_)

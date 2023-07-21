@@ -5,10 +5,8 @@
 ;; provenance proofs `a` and `b`
 ;; When a proof `a = b` is used as a provenance proof, it is a proof of `b`
 
-;; proves that a term exists in the database
-(function ^Original_ (^) Proof_)
-;; proves two terms were set equal in the database
-(function ^OriginalEq_ (^ ^) Proof_)
+(function ^Term_ (^) ProofTerm_)
+
 ;; justifies the fact that a rule fired
 (function ^Rule_ (ProofList_ String) Proof_)
 ;; using a rule justification,
