@@ -80,6 +80,25 @@ impl ProofState {
         })]
     }
 
+    fn make_prim_term_tables(&self) -> Vec<Command> {
+        let mut res = vec![];
+        for (name, _sort) in TypeInfo::default().sorts {
+            res.push(Command::Function(FunctionDecl {
+                name: self.term_func_name(name),
+                schema: Schema {
+                    input: vec![name],
+                    output: self.get_proof_term_type(),
+                },
+                default: None,
+                merge: None,
+                merge_action: vec![],
+                cost: None,
+                unextractable: false,
+            }))
+        }
+        res
+    }
+
     fn var_to_term(&self, var: Symbol) -> String {
         let var_type = self.type_info.lookup(self.current_ctx, var).unwrap().name();
         let term_name = self.term_func_name(var_type);
@@ -124,7 +143,6 @@ impl ProofState {
 
     fn add_proof_of(&self, expr: &NormExpr, proof: String) -> Vec<Command> {
         let term = self.get_term(expr);
-        let expr_type = self.type_info.lookup_expr(self.current_ctx, &expr).unwrap();
         let proof_func = self.proof_func_name();
         self.parse_program(&format!("(set ({proof_func} {term}) {proof})"))
             .unwrap()
@@ -152,6 +170,7 @@ impl ProofState {
 
         if !self.proof_header_added {
             res.extend(self.proof_header());
+            res.extend(self.make_prim_term_tables());
             self.proof_header_added = true;
         }
 
