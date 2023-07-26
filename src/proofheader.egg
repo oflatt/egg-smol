@@ -4,11 +4,9 @@
 
 
 (function ProofOf_ (ProofTerm_) Proof_ :merge new)
-
 ;; ProofList definitions
-(function Cons_ (Proof_ ProofList_) ProofList_)
+(function ProofCons_ (Proof_ ProofList_) ProofList_)
 (function ProofNull_ () ProofList_)
-(let Null_ (ProofNull_))
 
 
 (function Original_ (ProofTerm_) Proof_)

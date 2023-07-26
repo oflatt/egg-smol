@@ -779,6 +779,7 @@ impl EGraph {
                                 let out = out.clone();
                                 let default = default.clone();
                                 let (_, value) = self.eval_expr(&default, Some(out), true)?;
+                                // re-borrow
                                 self.functions.get_mut(f).unwrap().insert(values, value, ts);
                                 value
                             }

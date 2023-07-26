@@ -105,6 +105,12 @@ impl ProofState {
         format!("({term_name} {var})")
     }
 
+    fn get_proof(&self, expr: &NormExpr) -> String {
+        let term = self.get_term(&expr);
+        let proof_func = self.proof_func_name();
+        format!("({proof_func} {term})")
+    }
+
     fn get_term(&self, expr: &NormExpr) -> String {
         let expr_type = self.type_info.lookup_expr(self.current_ctx, &expr).unwrap();
         let NormExpr::Call(head, children) = expr;
@@ -148,7 +154,52 @@ impl ProofState {
             .unwrap()
     }
 
-    fn add_proofs_command(&self, command: NCommand) -> Vec<Command> {
+    fn fact_proof(&self, fact: &NormFact) -> Option<String> {
+        match fact {
+            NormFact::Assign(lhs, expr) => Some(self.get_proof(expr)),
+            _ => None,
+        }
+    }
+
+    fn proof_null(&self) -> String {
+        let underscores = "_".repeat(self.desugar.number_underscores);
+        format!("(ProofNull{})", underscores)
+    }
+
+    fn proof_cons(&self, head: String, tail: String) -> String {
+        let underscores = "_".repeat(self.desugar.number_underscores);
+        format!("(ProofCons{} {} {})", underscores, head, tail)
+    }
+
+    fn rule_proof(&self, rule: &NormRule) -> String {
+        let mut res = self.proof_null();
+        for fact in rule.body.iter().rev() {
+            if let Some(prf) = self.fact_proof(fact) {
+                res = self.proof_cons(prf, res);
+            }
+        }
+        res
+    }
+
+    fn rule_add_proofs(&mut self, rule: &NormRule) -> Vec<Action> {
+        let rule_proof = self.fresh();
+        let mut res = self.parse_actions(vec![format!(
+            "(let {rule_proof} {})",
+            self.rule_proof(rule)
+        )]);
+        for action in rule.head.iter() {
+            res.push(action.to_action());
+            // TODO add proofs for each action
+        }
+
+        res
+    }
+
+    fn fresh(&mut self) -> Symbol {
+        self.desugar.fresh()
+    }
+
+    fn add_proofs_command(&mut self, command: NCommand) -> Vec<Command> {
         match &command {
             NCommand::Function(fdecl) => {
                 vec_append(vec![command.to_command()], self.make_term_table(fdecl))
@@ -161,6 +212,20 @@ impl ProofState {
                 vec![command.to_command()],
                 self.add_proofs_action_original(action),
             ),
+            NCommand::NormRule {
+                name,
+                rule,
+                ruleset,
+            } => {
+                vec![Command::Rule {
+                    name: *name,
+                    ruleset: *ruleset,
+                    rule: Rule {
+                        body: rule.body.iter().map(|e| e.to_fact()).collect(),
+                        head: self.rule_add_proofs(&rule),
+                    },
+                }]
+            }
             _ => vec![command.to_command()],
         }
     }

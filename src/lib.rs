@@ -359,31 +359,6 @@ impl EGraph {
         Ok(())
     }
 
-    pub fn declare_constructor(
-        &mut self,
-        variant: Variant,
-        sort: impl Into<Symbol>,
-    ) -> Result<(), Error> {
-        let name = variant.name;
-        let sort = sort.into();
-        self.declare_function(&FunctionDecl {
-            name,
-            schema: Schema {
-                input: variant.types,
-                output: sort,
-            },
-            merge: None,
-            merge_action: vec![],
-            default: None,
-            cost: variant.cost,
-            unextractable: false,
-        })?;
-        // if let Some(ctors) = self.sorts.get_mut(&sort) {
-        //     ctors.push(name);
-        // }
-        Ok(())
-    }
-
     pub fn eval_lit(&self, lit: &Literal) -> Value {
         match lit {
             Literal::Int(i) => i.store(&self.proof_state.type_info.get_sort()).unwrap(),
@@ -461,42 +436,46 @@ impl EGraph {
     }
 
     // returns whether the egraph was updated
-    pub fn run_schedule(&mut self, sched: &NormSchedule) -> RunReport {
+    pub fn run_schedule(&mut self, sched: &NormSchedule) -> Result<RunReport, Error> {
         match sched {
             NormSchedule::Run(config) => self.run_rules(config),
             NormSchedule::Repeat(limit, sched) => {
                 let mut report = RunReport::default();
                 for _i in 0..*limit {
-                    let rec = self.run_schedule(sched);
+                    let rec = self.run_schedule(sched)?;
                     report = report.union(&rec);
                     if !rec.updated {
                         break;
                     }
                 }
-                report
+                Ok(report)
             }
             NormSchedule::Saturate(sched) => {
                 let mut report = RunReport::default();
                 loop {
-                    let rec = self.run_schedule(sched);
+                    let rec = self.run_schedule(sched)?;
                     report = report.union(&rec);
                     if !rec.updated {
                         break;
                     }
                 }
-                report
+                Ok(report)
             }
             NormSchedule::Sequence(scheds) => {
                 let mut report = RunReport::default();
                 for sched in scheds {
-                    report = report.union(&self.run_schedule(sched));
+                    report = report.union(&self.run_schedule(sched)?);
                 }
-                report
+                Ok(report)
             }
         }
     }
 
-    pub fn run_rules_once(&mut self, config: &NormRunConfig, report: &mut RunReport) {
+    pub fn run_rules_once(
+        &mut self,
+        config: &NormRunConfig,
+        report: &mut RunReport,
+    ) -> Result<(), Error> {
         let NormRunConfig { ruleset, until } = config;
 
         if let Some(facts) = until {
@@ -505,12 +484,12 @@ impl EGraph {
                     "Breaking early because of facts:\n {}!",
                     ListDisplay(facts, "\n")
                 );
-                return;
+                return Ok(());
             }
         }
 
         let subreport = self.step_rules(*ruleset);
-        *report = report.union(&subreport);
+        *report = report.union(&subreport?);
 
         log::debug!("database size: {}", self.num_tuples());
         self.timestamp += 1;
@@ -518,12 +497,13 @@ impl EGraph {
         if self.num_tuples() > self.node_limit {
             log::warn!("Node limit reached, {} nodes. Stopping!", self.num_tuples());
         }
+        Ok(())
     }
 
-    pub fn run_rules(&mut self, config: &NormRunConfig) -> RunReport {
+    pub fn run_rules(&mut self, config: &NormRunConfig) -> Result<RunReport, Error> {
         let mut report: RunReport = Default::default();
 
-        self.run_rules_once(config, &mut report);
+        self.run_rules_once(config, &mut report)?;
 
         // Report the worst offenders
         log::debug!("Slowest rules:\n{}", {
@@ -553,10 +533,10 @@ impl EGraph {
         //         log::debug!("  {args:?} = {val:?}");
         //     }
         // }
-        report
+        Ok(report)
     }
 
-    fn step_rules(&mut self, ruleset: Symbol) -> RunReport {
+    fn step_rules(&mut self, ruleset: Symbol) -> Result<RunReport, Error> {
         let mut report = RunReport::default();
 
         let ban_length = 5;
@@ -631,15 +611,13 @@ impl EGraph {
             // run one iteration when n == 0
             if num_vars == 0 {
                 rule.matches += 1;
-                // we can ignore results here
                 stack.clear();
-                let _ = self.run_actions(stack, &[], &rule.program, true);
+                self.run_actions(stack, &[], &rule.program, true)?;
             } else {
                 for values in all_values.chunks(num_vars) {
                     rule.matches += 1;
-                    // we can ignore results here
                     stack.clear();
-                    let _ = self.run_actions(stack, values, &rule.program, true);
+                    self.run_actions(stack, values, &rule.program, true)?;
                 }
             }
 
@@ -648,7 +626,7 @@ impl EGraph {
         self.rulesets.insert(ruleset, rules);
         let apply_elapsed = apply_start.elapsed();
         report.apply_time += apply_elapsed;
-        report
+        Ok(report)
     }
 
     fn add_rule_with_name(
@@ -814,7 +792,7 @@ impl EGraph {
             }
             NCommand::RunSchedule(sched) => {
                 if should_run {
-                    self.run_report = Some(self.run_schedule(&sched));
+                    self.run_report = Some(self.run_schedule(&sched)?);
                     format!("Ran schedule {}.", sched)
                 } else {
                     "Skipping schedule.".to_string()

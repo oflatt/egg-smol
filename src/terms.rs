@@ -191,7 +191,7 @@ impl ProofState {
             .collect()
     }
 
-    fn parse_actions(&self, actions: Vec<String>) -> Vec<Action> {
+    pub(crate) fn parse_actions(&self, actions: Vec<String>) -> Vec<Action> {
         actions
             .into_iter()
             .map(|s| self.desugar.action_parser.parse(&s).unwrap())

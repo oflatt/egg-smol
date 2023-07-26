@@ -88,7 +88,7 @@ fn normalize_expr(
     let lhs = if bound.insert(lhs_in) {
         lhs_in
     } else {
-        let fresh = desugar.get_fresh();
+        let fresh = desugar.fresh();
         constraints.push((fresh, lhs_in));
         fresh
     };
@@ -110,12 +110,12 @@ fn normalize_expr(
                         new_children.push(*v);
                     }
                     Expr::Lit(l) => {
-                        let fresh = desugar.get_fresh();
+                        let fresh = desugar.fresh();
                         res.push(NormFact::AssignLit(fresh, l.clone()));
                         new_children.push(fresh);
                     }
                     _ => {
-                        let fresh = desugar.get_fresh();
+                        let fresh = desugar.fresh();
                         normalize_expr(fresh, child, desugar, res, constraints, bound, cache);
                         new_children.push(fresh);
                     }
@@ -130,19 +130,19 @@ fn normalize_expr(
                 match child {
                     Expr::Var(v) => {
                         if desugar.global_variables.contains(v) {
-                            let fresh = desugar.get_fresh();
+                            let fresh = desugar.fresh();
                             new_children.push(fresh);
                             constraints.push((fresh, *v));
                         } else if bound.insert(*v) {
                             new_children.push(*v);
                         } else {
-                            let new = desugar.get_fresh();
+                            let new = desugar.fresh();
                             new_children.push(new);
                             constraints.push((new, *v));
                         }
                     }
                     _ => {
-                        let fresh = desugar.get_fresh();
+                        let fresh = desugar.fresh();
                         bound.insert(fresh);
                         normalize_expr(fresh, child, desugar, res, constraints, bound, cache);
                         new_children.push(fresh);
@@ -180,7 +180,7 @@ fn flatten_equalities(equalities: Vec<(Symbol, Expr)>, desugar: &mut Desugar) ->
         }
         // lhs is already bound
         else if bound(lhs, desugar, &bound_variables) {
-            let fresh = desugar.get_fresh();
+            let fresh = desugar.fresh();
             normalize_expr(
                 fresh,
                 &rhs,
@@ -224,7 +224,7 @@ fn flatten_facts(facts: &Vec<Fact>, desugar: &mut Desugar) -> Vec<NormFact> {
                 } else if let Expr::Var(v) = rhs {
                     equalities.push((*v, lhs.clone()));
                 } else {
-                    let fresh = desugar.get_fresh();
+                    let fresh = desugar.fresh();
                     equalities.push((fresh, lhs.clone()));
                     equalities.push((fresh, rhs.clone()));
                 }
@@ -234,7 +234,7 @@ fn flatten_facts(facts: &Vec<Fact>, desugar: &mut Desugar) -> Vec<NormFact> {
                 // just a variable
                 if let Expr::Var(_v) = expr {
                 } else {
-                    equalities.push((desugar.get_fresh(), expr.clone()));
+                    equalities.push((desugar.fresh(), expr.clone()));
                 }
             }
         }
@@ -320,7 +320,7 @@ fn give_unique_names(desugar: &mut Desugar, facts: Vec<NormFact>) -> Vec<NormFac
                     name_used_immediately.insert(var);
                     var
                 } else {
-                    let fresh = desugar.get_fresh();
+                    let fresh = desugar.fresh();
                     // typechecking BS- for primitives
                     // we need to define variables before they are used
                     if name_used_immediately.contains(&var) {
@@ -397,7 +397,7 @@ fn add_semi_naive_rule(desugar: &mut Desugar, rule: Rule) -> Option<Rule> {
                 if let Expr::Call(_, _) = value {
                     add_new_rule = true;
                     let mut eq_vec: Vec<Expr> = Vec::new();
-                    let fresh_symbol = desugar.get_fresh();
+                    let fresh_symbol = desugar.fresh();
                     eq_vec.push(Expr::Var(fresh_symbol));
                     eq_vec.push(value.clone());
                     new_rule.body.push(Fact::Eq(eq_vec));
@@ -458,7 +458,7 @@ pub(crate) fn desugar_simplify(
     schedule: &Schedule,
 ) -> Vec<NCommand> {
     let mut res = vec![NCommand::Push(1)];
-    let lhs = desugar.get_fresh();
+    let lhs = desugar.fresh();
     res.extend(
         flatten_actions(&vec![Action::Let(lhs, expr.clone())], desugar)
             .into_iter()
@@ -606,8 +606,8 @@ pub(crate) fn desugar_command(
             variants: _variants,
             fact,
         } => {
-            let fresh = desugar.get_fresh();
-            let fresh_ruleset = desugar.get_fresh();
+            let fresh = desugar.fresh();
+            let fresh_ruleset = desugar.fresh();
             let desugaring = if let Fact::Fact(Expr::Var(v)) = fact {
                 format!("(extract {v})")
             } else {
@@ -785,7 +785,7 @@ impl Desugar {
         ))
     }
 
-    pub fn get_fresh(&mut self) -> Symbol {
+    pub fn fresh(&mut self) -> Symbol {
         self.next_fresh += 1;
         format!(
             "v{}{}",
@@ -822,13 +822,13 @@ impl Desugar {
         }
         let res = match expr {
             Expr::Lit(l) => {
-                let assign = self.get_fresh();
+                let assign = self.fresh();
                 res.push(NormAction::LetLit(assign, l.clone()));
                 assign
             }
             Expr::Var(v) => *v,
             Expr::Call(f, children) => {
-                let assign = self.get_fresh();
+                let assign = self.fresh();
                 let mut new_children = vec![];
                 for child in children {
                     match child {
@@ -864,7 +864,7 @@ impl Desugar {
     }
 
     pub fn declare(&mut self, name: Symbol, sort: Symbol) -> Vec<NCommand> {
-        let fresh = self.get_fresh();
+        let fresh = self.fresh();
         vec![
             NCommand::Function(FunctionDecl {
                 name: fresh,
