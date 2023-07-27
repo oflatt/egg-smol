@@ -299,10 +299,6 @@ impl ProofState {
         })
     }
 
-    fn instrument_fdecl(&mut self, fdecl: &FunctionDecl) -> FunctionDecl {
-        fdecl.clone()
-    }
-
     // TODO we need to also instrument merge actions and merge because they can add new terms that need representatives
     // the egraph is the initial egraph with only default sorts
     pub(crate) fn add_term_encoding(&mut self, program: Vec<NormCommand>) -> Vec<Command> {

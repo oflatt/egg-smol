@@ -4,7 +4,7 @@ fn desugar_datatype(name: Symbol, variants: Vec<Variant>) -> Vec<NCommand> {
     vec![NCommand::Sort(name, None)]
         .into_iter()
         .chain(variants.into_iter().map(|variant| {
-            NCommand::Function(FunctionDecl {
+            NCommand::Function(NormFunctionDecl {
                 name: variant.name,
                 schema: Schema {
                     input: variant.types,
@@ -244,9 +244,9 @@ fn flatten_facts(facts: &Vec<Fact>, desugar: &mut Desugar) -> Vec<NormFact> {
 }
 
 fn flatten_actions(actions: &Vec<Action>, desugar: &mut Desugar) -> Vec<NormAction> {
-    let mut memo = Default::default();
     let mut add_expr = |expr: Expr, res: &mut Vec<NormAction>| -> Symbol {
-        desugar.expr_to_flat_actions(&expr, res, &mut memo)
+        // TODO using new memo every time because re-ordering table accesses is bad
+        desugar.expr_to_flat_actions(&expr, res, &mut Default::default())
     };
 
     let mut res = vec![];
@@ -541,7 +541,7 @@ pub(crate) fn desugar_command(
             vec![NCommand::SetOption { name, value }]
         }
         Command::Function(fdecl) => {
-            vec![NCommand::Function(fdecl)]
+            vec![NCommand::Function(desugar.desugar_function(&fdecl))]
         }
         Command::Declare { name, sort } => desugar.declare(name, sort),
         Command::Datatype { name, variants } => desugar_datatype(name, variants),
@@ -866,7 +866,7 @@ impl Desugar {
     pub fn declare(&mut self, name: Symbol, sort: Symbol) -> Vec<NCommand> {
         let fresh = self.fresh();
         vec![
-            NCommand::Function(FunctionDecl {
+            NCommand::Function(NormFunctionDecl {
                 name: fresh,
                 schema: Schema {
                     input: vec![],
@@ -880,5 +880,17 @@ impl Desugar {
             }),
             NCommand::NormAction(NormAction::Let(name, NormExpr::Call(fresh, vec![]))),
         ]
+    }
+
+    pub fn desugar_function(&mut self, fdecl: &FunctionDecl) -> NormFunctionDecl {
+        NormFunctionDecl {
+            name: fdecl.name,
+            schema: fdecl.schema.clone(),
+            default: fdecl.default.clone(),
+            merge: fdecl.merge.clone(),
+            merge_action: flatten_actions(&fdecl.merge_action, self),
+            cost: fdecl.cost.clone(),
+            unextractable: fdecl.unextractable,
+        }
     }
 }

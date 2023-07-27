@@ -132,26 +132,37 @@ impl ProofState {
         format!("(Original{underscores} {term})")
     }
 
+    fn rule_proof_name(&self) -> String {
+        format!("RuleProof{}", "_".repeat(self.desugar.number_underscores))
+    }
+
     fn add_proofs_action_original(&self, action: &NormAction) -> Vec<Command> {
         match action {
             NormAction::Delete(..) | NormAction::Extract(..) | NormAction::Panic(..) => {
                 vec![]
             }
-            NormAction::Let(lhs, expr) => self.add_proof_of(expr, self.original(expr)),
-            NormAction::Union(lhs, rhs) => {
+            NormAction::Let(_lhs, expr) => {
+                vec![Command::Action(
+                    self.add_proof_of(expr, &self.original(expr)),
+                )]
+            }
+            NormAction::Union(_lhs, _rhs) => {
                 panic!("Union should have been desugared by term encoding");
             }
-            NormAction::LetLit(lhs, _lit) => vec![],
+            NormAction::LetLit(_lhs, _lit) => vec![],
             NormAction::LetVar(..) => vec![],
-            NormAction::Set(expr, var) => self.add_proof_of(expr, self.original(expr)),
+            NormAction::Set(expr, _var) => vec![Command::Action(
+                self.add_proof_of(expr, &self.original(expr)),
+            )],
         }
     }
 
-    fn add_proof_of(&self, expr: &NormExpr, proof: String) -> Vec<Command> {
+    fn add_proof_of(&self, expr: &NormExpr, proof: &str) -> Action {
         let term = self.get_term(expr);
         let proof_func = self.proof_func_name();
-        self.parse_program(&format!("(set ({proof_func} {term}) {proof})"))
-            .unwrap()
+        let res = self.parse_actions(vec![format!("(set ({proof_func} {term}) {proof})")]);
+        assert!(res.len() == 1);
+        res.into_iter().next().unwrap()
     }
 
     fn fact_proof(&self, fact: &NormFact) -> Option<String> {
@@ -181,15 +192,29 @@ impl ProofState {
         res
     }
 
-    fn rule_add_proofs(&mut self, rule: &NormRule) -> Vec<Action> {
-        let rule_proof = self.fresh();
+    fn rule_add_proofs(&mut self, rule: &NormRule, name: Symbol) -> Vec<Action> {
+        let rule_proof = self.fresh().as_str();
+        let rule_proof_name = self.rule_proof_name();
         let mut res = self.parse_actions(vec![format!(
-            "(let {rule_proof} {})",
+            "(let {rule_proof} ({rule_proof_name} \"{name}\" {}))",
             self.rule_proof(rule)
         )]);
         for action in rule.head.iter() {
             res.push(action.to_action());
-            // TODO add proofs for each action
+            match action {
+                NormAction::Let(_lhs, expr) => {
+                    res.push(self.add_proof_of(expr, rule_proof));
+                }
+                NormAction::Set(expr, _var) => {
+                    res.push(self.add_proof_of(expr, rule_proof));
+                }
+                NormAction::Union(..) => panic!("Union should have been desugared"),
+                NormAction::LetLit(..)
+                | NormAction::LetVar(..)
+                | NormAction::Delete(..)
+                | NormAction::Extract(..)
+                | NormAction::Panic(..) => {}
+            }
         }
 
         res
@@ -222,7 +247,7 @@ impl ProofState {
                     ruleset: *ruleset,
                     rule: Rule {
                         body: rule.body.iter().map(|e| e.to_fact()).collect(),
-                        head: self.rule_add_proofs(&rule),
+                        head: self.rule_add_proofs(rule, *name),
                     },
                 }]
             }

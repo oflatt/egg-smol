@@ -10,4 +10,4 @@
 
 
 (function Original_ (ProofTerm_) Proof_)
-(function Rule_ (ProofList_ String) Proof_)
+(function RuleProof_ (String ProofList_) Proof_)

@@ -91,7 +91,7 @@ pub enum NCommand {
         value: Expr,
     },
     Sort(Symbol, Option<(Symbol, Vec<Expr>)>),
-    Function(FunctionDecl),
+    Function(NormFunctionDecl),
     AddRuleset(Symbol),
     NormRule {
         name: Symbol,
@@ -132,7 +132,7 @@ impl NCommand {
                 value: value.clone(),
             },
             NCommand::Sort(name, params) => Command::Sort(*name, params.clone()),
-            NCommand::Function(f) => Command::Function(f.clone()),
+            NCommand::Function(f) => Command::Function(f.to_fdecl()),
             NCommand::AddRuleset(name) => Command::AddRuleset(*name),
             NCommand::NormRule {
                 name,
@@ -506,6 +506,32 @@ pub struct FunctionDecl {
     pub merge_action: Vec<Action>,
     pub cost: Option<usize>,
     pub unextractable: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct NormFunctionDecl {
+    pub name: Symbol,
+    pub schema: Schema,
+    // todo desugar default, merge
+    pub default: Option<Expr>,
+    pub merge: Option<Expr>,
+    pub merge_action: Vec<NormAction>,
+    pub cost: Option<usize>,
+    pub unextractable: bool,
+}
+
+impl NormFunctionDecl {
+    pub fn to_fdecl(&self) -> FunctionDecl {
+        FunctionDecl {
+            name: self.name,
+            schema: self.schema.clone(),
+            default: self.default.clone(),
+            merge: self.merge.clone(),
+            merge_action: self.merge_action.iter().map(|a| a.to_action()).collect(),
+            cost: self.cost,
+            unextractable: self.unextractable,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -967,7 +993,8 @@ impl NormRule {
                     });
                     let substituted = new_expr.subst(subst);
 
-                    if substituted.ast_size() > 3 {
+                    // TODO re-ordering calls leads to bugs
+                    if true {
                         head.push(Action::Let(*symbol, substituted));
                     } else {
                         subst.insert(*symbol, substituted);
