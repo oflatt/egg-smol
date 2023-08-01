@@ -10,13 +10,17 @@ use crate::{
 };
 use std::{
     cell::UnsafeCell,
+    cmp::min,
     fmt::{self, Debug},
     ops::Range,
 };
 
+#[derive(Clone)]
 enum Instr<'a> {
     Intersect {
         value_idx: usize,
+        variable_name: Symbol,
+        info: VarInfo2,
         trie_accesses: Vec<(usize, TrieAccess<'a>)>,
     },
     ConstrainConstant {
@@ -29,6 +33,15 @@ enum Instr<'a> {
         args: Vec<AtomTerm>,
         check: bool, // check or assign to output variable
     },
+}
+
+// FIXME @mwillsey awful name, bad bad bad
+#[derive(Default, Debug, Clone)]
+struct VarInfo2 {
+    occurences: Vec<usize>,
+    intersected_on: usize,
+    size_guess: usize,
+    is_nonparent_input: bool,
 }
 
 struct InputSizes<'a> {
@@ -58,31 +71,44 @@ type Result = std::result::Result<(), ()>;
 
 struct Program<'a>(Vec<Instr<'a>>);
 
+impl<'a> std::fmt::Display for Instr<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Instr::Intersect {
+                value_idx,
+                trie_accesses,
+                variable_name,
+                info,
+            } => {
+                write!(
+                    f,
+                    " Intersect @ {value_idx} sg={sg:6} {variable_name:15}",
+                    sg = info.size_guess
+                )?;
+                for (trie_idx, a) in trie_accesses {
+                    write!(f, "  {}: {}", trie_idx, a)?;
+                }
+                writeln!(f)?
+            }
+            Instr::ConstrainConstant {
+                index,
+                val,
+                trie_access,
+            } => {
+                writeln!(f, " ConstrainConstant {index} {trie_access} = {val:?}")?;
+            }
+            Instr::Call { prim, args, check } => {
+                writeln!(f, " Call {:?} {:?} {:?}", prim, args, check)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 impl<'a> std::fmt::Display for Program<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for instr in &self.0 {
-            match instr {
-                Instr::Intersect {
-                    value_idx,
-                    trie_accesses,
-                } => {
-                    write!(f, " Intersect @ {} ", value_idx)?;
-                    for (trie_idx, a) in trie_accesses {
-                        write!(f, "  {}: {}", trie_idx, a)?;
-                    }
-                    writeln!(f)?
-                }
-                Instr::ConstrainConstant {
-                    index,
-                    val,
-                    trie_access,
-                } => {
-                    writeln!(f, " ConstrainConstant {index} {trie_access} = {val:?}")?;
-                }
-                Instr::Call { prim, args, check } => {
-                    writeln!(f, " Call {:?} {:?} {:?}", prim, args, check)?;
-                }
-            }
+        for (i, instr) in self.0.iter().enumerate() {
+            write!(f, "{i:2}. {}", instr)?;
         }
         Ok(())
     }
@@ -90,6 +116,7 @@ impl<'a> std::fmt::Display for Program<'a> {
 
 struct Context<'b> {
     query: &'b CompiledQuery,
+    join_var_ordering: Vec<Symbol>,
     tuple: Vec<Value>,
     matches: usize,
     egraph: &'b EGraph,
@@ -101,11 +128,13 @@ impl<'b> Context<'b> {
         cq: &'b CompiledQuery,
         timestamp_ranges: &[Range<u32>],
     ) -> Option<(Self, Program<'b>, Vec<Option<usize>>)> {
-        let (program, _vars, intersections) = egraph.compile_program(cq, timestamp_ranges)?;
+        let (program, join_var_ordering, intersections) =
+            egraph.compile_program(cq, timestamp_ranges)?;
 
         let ctx = Context {
             query: cq,
             tuple: vec![Value::fake(); cq.vars.len()],
+            join_var_ordering,
             matches: 0,
             egraph,
         };
@@ -148,6 +177,7 @@ impl<'b> Context<'b> {
             Instr::Intersect {
                 value_idx,
                 trie_accesses,
+                ..
             } => {
                 if let Some(x) = trie_accesses
                     .iter()
@@ -156,6 +186,7 @@ impl<'b> Context<'b> {
                 {
                     stage.add_measurement(x);
                 }
+
                 match trie_accesses.as_slice() {
                     [(j, access)] => tries[*j].for_each(access, |value, trie| {
                         let old_trie = std::mem::replace(&mut tries[*j], trie);
@@ -226,9 +257,14 @@ impl<'b> Context<'b> {
                     match out {
                         AtomTerm::Var(v) => {
                             let i = self.query.vars.get_index_of(v).unwrap();
-                            if *check && self.tuple[i] != res {
-                                return Ok(());
+
+                            if *check {
+                                assert_ne!(self.tuple[i], Value::fake());
+                                if self.tuple[i] != res {
+                                    return Ok(());
+                                }
                             }
+
                             self.tuple[i] = res;
                         }
                         AtomTerm::Value(val) => {
@@ -247,6 +283,7 @@ impl<'b> Context<'b> {
     }
 }
 
+#[derive(Clone)]
 enum Constraint {
     Eq(usize, usize),
     Const(usize, Value),
@@ -278,6 +315,8 @@ pub struct VarInfo {
 #[derive(Debug, Clone)]
 pub struct CompiledQuery {
     query: Query,
+    // Ordering is used for the tuple
+    // The GJ variable ordering is stored in the context
     pub vars: IndexMap<Symbol, VarInfo>,
 }
 
@@ -287,7 +326,7 @@ impl EGraph {
         query: Query,
         types: &IndexMap<Symbol, ArcSort>,
     ) -> CompiledQuery {
-        // NOTE: this vars order only used for ordering the tuple,
+        // NOTE: this vars order only used for ordering the tuple storing the resulting match
         // It is not the GJ variable order.
         let mut vars: IndexMap<Symbol, VarInfo> = Default::default();
 
@@ -302,6 +341,7 @@ impl EGraph {
             }
         }
 
+        // make sure everyone has an entry in the vars table
         for prim in &query.filters {
             for v in prim.vars() {
                 vars.entry(v).or_default();
@@ -362,13 +402,6 @@ impl EGraph {
         Vec<Symbol>,        /* variable ordering */
         Vec<Option<usize>>, /* the first column accessed per-atom */
     )> {
-        #[derive(Default, Debug)]
-        struct VarInfo2 {
-            occurences: Vec<usize>,
-            intersected_on: usize,
-            size_guess: usize,
-        }
-
         let atoms = &query.query.atoms;
         let mut vars: IndexMap<Symbol, VarInfo2> = Default::default();
         let mut constants =
@@ -385,6 +418,18 @@ impl EGraph {
             }
         }
 
+        for (_i, atom) in atoms.iter().enumerate() {
+            if !atom.head.as_str().contains("_Parent_") {
+                if let Some((_last, args)) = atom.args.split_last() {
+                    for arg in args {
+                        if let AtomTerm::Var(var) = arg {
+                            vars.entry(*var).or_default().is_nonparent_input = true;
+                        }
+                    }
+                }
+            }
+        }
+
         for info in vars.values_mut() {
             info.occurences.sort_unstable();
             info.occurences.dedup();
@@ -393,7 +438,13 @@ impl EGraph {
         let relation_sizes: Vec<usize> = atoms
             .iter()
             .zip(timestamp_ranges)
-            .map(|(atom, range)| self.functions[&atom.head].get_size(range))
+            .map(|(atom, range)| {
+                if atom.head.as_str().contains("_Parent_") {
+                    usize::MAX
+                } else {
+                    self.functions[&atom.head].get_size(range)
+                }
+            })
             .collect();
 
         if relation_sizes.iter().any(|&s| s == 0) {
@@ -411,21 +462,104 @@ impl EGraph {
             // info.size_guess >>= info.occurences.len() - 1;
         }
 
+        let mut unionfind = UnionFind::default();
+        let mut lookup = HashMap::<Symbol, Id>::default();
+        for atom in atoms {
+            for var in atom.vars() {
+                if !lookup.contains_key(&var) {
+                    let id = unionfind.make_set();
+                    lookup.insert(var, id);
+                }
+            }
+        }
+
+        for atom in atoms {
+            if atom.head.as_str().contains("_Parent_") {
+                let first_var = atom.vars().next().unwrap();
+                for var in atom.vars() {
+                    unionfind.union_raw(lookup[&first_var], lookup[&var]);
+                }
+            }
+        }
+
+        let mut var_count_nonparent = HashMap::<Id, usize>::default();
+        for atom in atoms {
+            if !atom.head.as_str().contains("_Parent_") {
+                let mut already_counted = HashSet::default();
+                for var in atom.vars() {
+                    let id = unionfind.find(lookup[&var]);
+                    if already_counted.insert(id) {
+                        *var_count_nonparent.entry(id).or_default() += 1;
+                    }
+                }
+            }
+        }
+
+        let mut class_vars = HashMap::<Id, Vec<Symbol>>::default();
+        for (var, id) in &lookup {
+            class_vars
+                .entry(unionfind.find(*id))
+                .or_default()
+                .push(*var);
+        }
+        let all_vars = vars.keys().cloned().collect::<Vec<Symbol>>();
+        // the size guess for variables is the minimum across
+        // all variables in the same class
+        for v in all_vars {
+            for var in &class_vars[&unionfind.find(lookup[&v])] {
+                if vars.contains_key(var) && vars.contains_key(&v) {
+                    let new_guess = min(vars[&v].size_guess, vars[var].size_guess);
+                    vars[&v].size_guess = new_guess;
+                }
+            }
+            // info.size_guess >>= info.occurences.len() - 1;
+        }
+
+        // here we are picking the variable ordering
         let mut ordered_vars = IndexMap::default();
         while !vars.is_empty() {
-            let (&var, _info) = vars
-                .iter()
-                .max_by_key(|(_v, info)| {
-                    let size = info.size_guess as isize;
-                    (info.occurences.len(), info.intersected_on, -size)
-                })
-                .unwrap();
+            let mut var_is_parent_lookup = HashMap::<Symbol, usize>::default();
+            for atom in atoms {
+                if atom.head.as_str().contains("_Parent_") {
+                    let (todo, _others): (Vec<Symbol>, Vec<Symbol>) =
+                        atom.vars().partition(|v| vars.contains_key(v));
+                    if todo.len() == 1 {
+                        let var = todo[0];
+                        *var_is_parent_lookup.entry(var).or_default() += 1;
+                    }
+                }
+            }
 
+            let mut var_cost = vars
+                .iter()
+                .map(|(v, info)| {
+                    let size = info.size_guess as isize;
+                    let cost = (
+                        var_is_parent_lookup.get(v).unwrap_or(&0),
+                        var_count_nonparent
+                            .get(&unionfind.find(lookup[v]))
+                            .unwrap_or(&0),
+                        info.intersected_on,
+                        //occurences_nonparent.get(*v).unwrap_or(&0),
+                        -size,
+                    );
+                    (cost, v)
+                })
+                .collect::<Vec<_>>();
+            var_cost.sort();
+            var_cost.reverse();
+
+            log::debug!("Variable costs: {:?}", ListDebug(&var_cost, "\n"));
+
+            let var = *var_cost[0].1;
             let info = vars.remove(&var).unwrap();
             for &i in &info.occurences {
+                let (last, _rest) = atoms[i].args.split_last().unwrap();
                 for v in atoms[i].vars() {
-                    if let Some(info) = vars.get_mut(&v) {
-                        info.intersected_on += 1;
+                    if last != &AtomTerm::Var(v) {
+                        if let Some(info) = vars.get_mut(&v) {
+                            info.intersected_on += 1;
+                        }
                     }
                 }
             }
@@ -459,6 +593,8 @@ impl EGraph {
             });
             Instr::Intersect {
                 value_idx,
+                variable_name: v,
+                info: info.clone(),
                 trie_accesses: info
                     .occurences
                     .iter()
@@ -478,7 +614,6 @@ impl EGraph {
         program.extend(var_instrs);
 
         // now we can try to add primitives
-        // TODO this is very inefficient, since primitives all at the end
         let mut extra = query.query.filters.clone();
         while !extra.is_empty() {
             let next = extra.iter().position(|p| {
@@ -507,7 +642,44 @@ impl EGraph {
                     check,
                 });
             } else {
-                panic!("cycle")
+                panic!("cycle {:#?}", query)
+            }
+        }
+
+        // sanity check the program
+        let mut tuple_valid = vec![false; query.vars.len()];
+        for instr in &program {
+            match instr {
+                Instr::Intersect { value_idx, .. } => {
+                    assert!(!tuple_valid[*value_idx]);
+                    tuple_valid[*value_idx] = true;
+                }
+                Instr::ConstrainConstant { .. } => {}
+                Instr::Call { check, args, .. } => {
+                    let Some((last, args)) = args.split_last() else {
+                        continue
+                    };
+
+                    for a in args {
+                        if let AtomTerm::Var(v) = a {
+                            let i = query.vars.get_index_of(v).unwrap();
+                            assert!(tuple_valid[i]);
+                        }
+                    }
+
+                    match last {
+                        AtomTerm::Var(v) => {
+                            let i = query.vars.get_index_of(v).unwrap();
+                            assert_eq!(*check, tuple_valid[i], "{instr}");
+                            if !*check {
+                                tuple_valid[i] = true;
+                            }
+                        }
+                        AtomTerm::Value(_) => {
+                            assert!(*check);
+                        }
+                    }
+                }
             }
         }
 
@@ -535,14 +707,14 @@ impl EGraph {
                 }
 
                 // do the gj
+
                 if let Some((mut ctx, program, cols)) = Context::new(self, cq, &timestamp_ranges) {
                     let start = Instant::now();
                     log::debug!(
-                        "Query:\n{}\nNew atom: {}\nVars: {}\nProgram\n{}",
-                        cq.query,
-                        atom,
-                        ListDisplay(cq.vars.keys(), " "),
-                        program
+                        "Query:\n{q}\nNew atom: {atom}\nTuple: {tuple}\nJoin order: {order}\nProgram\n{program}",
+                        q = cq.query,
+                        order = ListDisplay(&ctx.join_var_ordering, " "),
+                        tuple = ListDisplay(cq.vars.keys(), " "),
                     );
                     let mut tries = Vec::with_capacity(cq.query.atoms.len());
                     for ((atom, ts), col) in cq
@@ -583,11 +755,18 @@ impl EGraph {
                             log::debug!("stage {i} total cost {sum}");
                         }
                     }
-                    log::debug!(
-                        "Matched {} times (took {:?})",
-                        ctx.matches,
-                        Instant::now().duration_since(start)
-                    );
+                    let duration = start.elapsed();
+                    log::debug!("Matched {} times (took {:?})", ctx.matches, duration,);
+                    let iteration = self
+                        .ruleset_iteration
+                        .get::<Symbol>(&"".into())
+                        .unwrap_or(&0);
+                    if duration.as_millis() > 1000 {
+                        log::warn!(
+                            "Query took a long time at iter {iteration} : {:?}",
+                            duration
+                        );
+                    }
                 }
 
                 if !do_seminaive {
@@ -727,6 +906,7 @@ impl LazyTrie {
     }
 }
 
+#[derive(Clone)]
 struct TrieAccess<'a> {
     function: &'a Function,
     timestamp_range: Range<u32>,

@@ -537,6 +537,13 @@ impl EGraph {
     }
 
     fn step_rules(&mut self, ruleset: Symbol) -> Result<RunReport, Error> {
+        // don't ban parent or rebuilding
+        let match_limit =
+            if ruleset.as_str().contains("parent_") || ruleset.as_str().contains("rebuilding_") {
+                usize::MAX
+            } else {
+                self.match_limit
+            };
         let mut report = RunReport::default();
 
         let ban_length = 5;
@@ -555,7 +562,7 @@ impl EGraph {
         for (name, rule) in copy_rules.iter() {
             let mut all_values = vec![];
             if rule.banned_until <= iteration {
-                let mut fuel = safe_shl(self.match_limit, rule.times_banned);
+                let mut fuel = safe_shl(match_limit, rule.times_banned);
                 let rule_search_start = Instant::now();
                 self.run_query(&rule.query, rule.todo_timestamp, |values| {
                     assert_eq!(values.len(), rule.query.vars.len());
@@ -573,10 +580,7 @@ impl EGraph {
                     rule_search_time.as_secs_f64(),
                     all_values.len()
                 );
-                report.updated |= !all_values.is_empty();
                 searched.push((name, all_values, rule_search_time));
-            } else {
-                report.updated = true;
             }
         }
 
@@ -593,7 +597,7 @@ impl EGraph {
             if num_vars != 0 {
                 // backoff logic
                 let len = all_values.len() / num_vars;
-                let threshold = safe_shl(self.match_limit, rule.times_banned);
+                let threshold = safe_shl(match_limit, rule.times_banned);
                 if len > threshold {
                     let ban_length = safe_shl(ban_length, rule.times_banned);
                     rule.times_banned = rule.times_banned.saturating_add(1);
@@ -626,7 +630,19 @@ impl EGraph {
         self.rulesets.insert(ruleset, rules);
         let apply_elapsed = apply_start.elapsed();
         report.apply_time += apply_elapsed;
+        report.updated |= self.did_change();
+
         Ok(report)
+    }
+
+    fn did_change(&self) -> bool {
+        for (_name, function) in &self.functions {
+            if function.nodes.max_ts() >= self.timestamp {
+                return true;
+            }
+        }
+
+        false
     }
 
     fn add_rule_with_name(

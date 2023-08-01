@@ -840,20 +840,19 @@ impl EGraph {
                                     result
                                 }
                             };
-                            let args = &stack[new_len..];
-                            let function = self.functions.get_mut(f).unwrap();
-                            function.insert(args, merged, self.timestamp);
-
-                            if new_value != old_value {
-                                // re-borrow
+                            if merged != old_value {
+                                let args = &stack[new_len..];
                                 let function = self.functions.get_mut(f).unwrap();
-                                if let Some(prog) = function.merge.on_merge.clone() {
-                                    let values = [old_value, new_value];
-                                    // XXX: we get an error if we pass the current
-                                    // stack and then truncate it to the old length.
-                                    // Why?
-                                    self.run_actions(&mut Vec::new(), &values, &prog, true)?;
-                                }
+                                function.insert(args, merged, self.timestamp);
+                            }
+                            // re-borrow
+                            let function = self.functions.get_mut(f).unwrap();
+                            if let Some(prog) = function.merge.on_merge.clone() {
+                                let values = [old_value, new_value];
+                                // XXX: we get an error if we pass the current
+                                // stack and then truncate it to the old length.
+                                // Why?
+                                self.run_actions(&mut Vec::new(), &values, &prog, true)?;
                             }
                         }
                     } else {

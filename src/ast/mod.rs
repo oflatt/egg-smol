@@ -993,8 +993,8 @@ impl NormRule {
                     });
                     let substituted = new_expr.subst(subst);
 
-                    // TODO re-ordering calls leads to bugs
-                    if true {
+                    // TODO sometimes re-arranging actions is bad
+                    if substituted.ast_size() > 1 {
                         head.push(Action::Let(*symbol, substituted));
                     } else {
                         subst.insert(*symbol, substituted);
