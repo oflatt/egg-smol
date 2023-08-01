@@ -327,7 +327,7 @@ impl ProofState {
                     res.extend(self.make_parent_table(*name));
                 }
                 NCommand::Function(fdecl) => {
-                    res.push(Command::Function(self.instrument_fdecl(fdecl)));
+                    res.push(command.to_command());
                     res.extend(self.make_canonicalize_func(fdecl));
                 }
                 NCommand::NormRule {

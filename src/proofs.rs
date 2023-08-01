@@ -54,7 +54,7 @@ impl ProofState {
     // For tables with merge functions, we need all
     // the inputs.
     // For other terms, just use built-in terms
-    fn make_term_table(&self, fdecl: &FunctionDecl) -> Vec<Command> {
+    fn make_term_table(&self, fdecl: &NormFunctionDecl) -> Vec<Command> {
         if fdecl.merge.is_none() {
             return vec![];
         }
@@ -192,21 +192,16 @@ impl ProofState {
         res
     }
 
-    fn rule_add_proofs(&mut self, rule: &NormRule, name: Symbol) -> Vec<Action> {
-        let rule_proof = self.fresh().as_str();
-        let rule_proof_name = self.rule_proof_name();
-        let mut res = self.parse_actions(vec![format!(
-            "(let {rule_proof} ({rule_proof_name} \"{name}\" {}))",
-            self.rule_proof(rule)
-        )]);
-        for action in rule.head.iter() {
+    fn actions_add_proof(&mut self, actions: &Vec<NormAction>, prf: Symbol) -> Vec<Action> {
+        let mut res = vec![];
+        for action in actions {
             res.push(action.to_action());
             match action {
                 NormAction::Let(_lhs, expr) => {
-                    res.push(self.add_proof_of(expr, rule_proof));
+                    res.push(self.add_proof_of(expr, prf.into()));
                 }
                 NormAction::Set(expr, _var) => {
-                    res.push(self.add_proof_of(expr, rule_proof));
+                    res.push(self.add_proof_of(expr, prf.into()));
                 }
                 NormAction::Union(..) => panic!("Union should have been desugared"),
                 NormAction::LetLit(..)
@@ -216,6 +211,17 @@ impl ProofState {
                 | NormAction::Panic(..) => {}
             }
         }
+        res
+    }
+
+    fn rule_add_proofs(&mut self, rule: &NormRule, name: Symbol) -> Vec<Action> {
+        let rule_proof = self.fresh().as_str();
+        let rule_proof_name = self.rule_proof_name();
+        let mut res = self.parse_actions(vec![format!(
+            "(let {rule_proof} ({rule_proof_name} \"{name}\" {}))",
+            self.rule_proof(rule)
+        )]);
+        res.extend(self.actions_add_proof(&rule.head, rule_proof.into()));
 
         res
     }
@@ -224,11 +230,73 @@ impl ProofState {
         self.desugar.fresh()
     }
 
+    pub(crate) fn merge_fn_child_name(&self, index: usize) -> Symbol {
+        Symbol::from(format!("child{}", index,))
+    }
+
+    // TODO this terrible function can go away if we desugar merge functions
+    pub(crate) fn instrument_merge_actions(&mut self, fdecl: &NormFunctionDecl) -> Vec<Action> {
+        if fdecl.merge.is_none() {
+            assert!(fdecl.merge_action.is_empty());
+            return vec![];
+        }
+        let children = fdecl
+            .schema
+            .input
+            .iter()
+            .enumerate()
+            .map(|(i, _)| self.merge_fn_child_name(i))
+            .collect::<Vec<_>>();
+        let name = fdecl.name;
+        let term_name = self.term_func_name(name);
+        let proof_func = self.proof_func_name();
+        let old_prf = format!(
+            "({proof_func} ({term_name} {} old))",
+            ListDisplay(&children, " ")
+        );
+        let new_expr = format!(
+            "({proof_func} ({term_name} {} new))",
+            ListDisplay(&children, " ")
+        );
+        let merged_term = format!(
+            "({term_name} {} {})",
+            ListDisplay(&children, " "),
+            fdecl.merge.unwrap()
+        );
+        let rule_prf_name = self.rule_proof_name();
+
+        let rule_name = format!("\"{name}-merge-fn\"");
+        let rule_prf = format!(
+            "({rule_prf_name} {rule_name} {})",
+            self.proof_cons(old_prf, self.proof_cons(new_expr, self.proof_null()))
+        );
+
+        vec_append(
+            self.parse_actions(vec![format!(
+                "(set ({proof_func} {merged_term}) {rule_prf})"
+            )]),
+            self.actions_add_proof(&fdecl.merge_action, rule_prf.into()),
+        )
+    }
+
+    pub(crate) fn instrument_fdecl(&mut self, fdecl: &NormFunctionDecl) -> FunctionDecl {
+        FunctionDecl {
+            name: fdecl.name,
+            schema: fdecl.schema.clone(),
+            merge: fdecl.merge.clone(),
+            merge_action: self.instrument_merge_actions(fdecl),
+            cost: fdecl.cost,
+            unextractable: fdecl.unextractable,
+            default: fdecl.default,
+        }
+    }
+
     fn add_proofs_command(&mut self, command: NCommand) -> Vec<Command> {
         match &command {
-            NCommand::Function(fdecl) => {
-                vec_append(vec![command.to_command()], self.make_term_table(fdecl))
-            }
+            NCommand::Function(fdecl) => vec_append(
+                vec![Command::Function(self.instrument_fdecl(&fdecl))],
+                self.make_term_table(fdecl),
+            ),
             NCommand::Sort(sort, _pre) => vec_append(
                 vec![command.to_command()],
                 self.parse_program(&self.make_proof_type(sort)).unwrap(),
