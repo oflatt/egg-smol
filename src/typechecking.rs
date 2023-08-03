@@ -6,15 +6,23 @@ pub struct FuncType {
     pub output: ArcSort,
     pub is_datatype: bool,
     pub has_default: bool,
+    pub is_primitive: bool,
 }
 
 impl FuncType {
-    pub fn new(input: Vec<ArcSort>, output: ArcSort, is_datatype: bool, has_default: bool) -> Self {
+    pub fn new(
+        input: Vec<ArcSort>,
+        output: ArcSort,
+        is_datatype: bool,
+        has_default: bool,
+        is_primitive: bool,
+    ) -> Self {
         Self {
             input,
             output,
             is_datatype,
             has_default,
+            is_primitive,
         }
     }
 }
@@ -149,8 +157,9 @@ impl TypeInfo {
         Ok(FuncType::new(
             input,
             output.clone(),
-            output.is_eq_sort() && !func.merge.is_some(),
+            output.is_eq_sort() && func.merge.is_none(),
             func.default.is_some(),
+            false,
         ))
     }
 
@@ -589,12 +598,23 @@ impl TypeInfo {
 
     fn lookup_func(&self, sym: Symbol, input_types: Vec<ArcSort>) -> Result<FuncType, TypeError> {
         if let Some(found) = self.func_types.get(&sym) {
+            if found.input.len() != input_types.len() {
+                return Err(TypeError::Arity {
+                    expr: Expr::Var(sym),
+                    expected: found.input.len(),
+                });
+            }
+            for (found, input) in found.input.iter().zip(input_types.iter()) {
+                if found.name() != input.name() {
+                    return Err(TypeError::TypeMismatch(found.clone(), input.clone()));
+                }
+            }
             Ok(found.clone())
         } else {
             if let Some(prims) = self.primitives.get(&sym) {
                 for prim in prims {
                     if let Some(return_type) = prim.accept(&input_types) {
-                        return Ok(FuncType::new(input_types, return_type, false, true));
+                        return Ok(FuncType::new(input_types, return_type, false, true, true));
                     }
                 }
             }
@@ -611,22 +631,12 @@ impl TypeInfo {
         expr: &NormExpr,
     ) -> Result<FuncType, TypeError> {
         let NormExpr::Call(head, body) = expr;
-        let child_types = if let Some(found) = self.func_types.get(head) {
-            found.input.clone()
-        } else {
-            let types = body
-                .iter()
-                .map(|var| self.lookup(ctx, *var))
-                .collect::<Result<Vec<_>, _>>();
-            if let Ok(types) = types {
-                types
-            } else {
-                // return the error
-                types?
-            }
-        };
+        let types = body
+            .iter()
+            .map(|var| self.lookup(ctx, *var))
+            .collect::<Result<Vec<_>, _>>()?;
 
-        self.lookup_func(*head, child_types)
+        self.lookup_func(*head, types)
     }
 
     pub(crate) fn typecheck_expr(

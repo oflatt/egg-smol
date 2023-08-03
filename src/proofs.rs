@@ -28,10 +28,6 @@ impl ProofState {
         replaced.replace('^', &sort.to_string())
     }
 
-    fn get_proof_type(&self) -> Symbol {
-        format!("Proof{}", "_".repeat(self.desugar.number_underscores)).into()
-    }
-
     fn get_proof_term_type(&self) -> Symbol {
         format!("ProofTerm{}", "_".repeat(self.desugar.number_underscores)).into()
     }
@@ -41,12 +37,7 @@ impl ProofState {
     }
 
     fn term_func_name(&self, name: Symbol) -> Symbol {
-        format!(
-            "{}Term{}",
-            name,
-            "_".repeat(self.desugar.number_underscores)
-        )
-        .into()
+        format!("{}T{}", name, "_".repeat(self.desugar.number_underscores)).into()
     }
 
     // Make a term type for this function
@@ -98,12 +89,6 @@ impl ProofState {
             }))
         }
         res
-    }
-
-    fn var_to_term(&self, var: Symbol) -> String {
-        let var_type = self.type_info.lookup(self.current_ctx, var).unwrap().name();
-        let term_name = self.term_func_name(var_type);
-        format!("({term_name} {var})")
     }
 
     fn get_proof(&self, expr: &NormExpr, output: Option<Symbol>) -> String {
@@ -172,7 +157,11 @@ impl ProofState {
 
     fn add_proof_of(&self, expr: &NormExpr, proof: &str, result: Option<Symbol>) -> Vec<Action> {
         let expr_type = self.type_info.lookup_expr(self.current_ctx, expr).unwrap();
-        if !expr_type.is_datatype && result.is_none() {
+        // no proof needed for primitives
+        // or just lookups
+        if expr_type.is_primitive
+            || (!expr_type.is_datatype && !expr_type.has_default && result.is_none())
+        {
             return vec![];
         }
         let term = self.get_term(expr, result);

@@ -3,7 +3,8 @@
 (sort ProofTerm_)
 
 
-(function ProofOf_ (ProofTerm_) Proof_ :merge new)
+;; Take the first proof
+(function ProofOf_ (ProofTerm_) Proof_ :merge old)
 ;; ProofList definitions
 (function ProofCons_ (Proof_ ProofList_) ProofList_)
 (function ProofNull_ () ProofList_)

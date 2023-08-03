@@ -126,15 +126,11 @@ fn generate_tests(glob: &str) -> Vec<Trial> {
             });
         }
 
-        // make a test with proofs enabled
-        // TODO: re-enable herbie, unsound, and eqsolve when proof extraction is faster
-        let banned = [
-            "herbie",
-            "repro_unsound",
-            "eqsolve",
-            "before_proofs",
-            "lambda",
-        ];
+        // Disable proofs for these tests that use containers
+        // or input
+        // or call functions in merge
+        // TODO fix me
+        let banned = ["fusion", "cykjson", "merge_saturates", "string_quotes"];
         if !banned.contains(&name.as_str()) {
             push_trial(Run {
                 test_proofs: true,

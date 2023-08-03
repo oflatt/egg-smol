@@ -758,17 +758,6 @@ impl EGraph {
                     let value = if let Some(out) = function.nodes.get(values) {
                         out.value
                     } else if make_defaults {
-                        if function.merge.on_merge.is_some() {
-                            let terms = values
-                                .iter()
-                                .map(|v| self.term_to_string(*v))
-                                .collect::<Vec<String>>();
-                            panic!(
-                                "No value found for function {f} with values {values:?}.\n
-                            Children terms: {}",
-                                ListDisplay(terms, "\n")
-                            );
-                        }
                         let ts = self.timestamp;
                         let out = &function.schema.output;
                         match function.decl.default.as_ref() {

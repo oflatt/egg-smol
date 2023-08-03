@@ -889,7 +889,7 @@ impl EGraph {
             }
             NCommand::Input { name, file } => {
                 let func = self.functions.get_mut(&name).unwrap();
-                let is_unit = func.schema.output.name().as_str() == "Unit";
+                let is_eq = func.schema.output.is_eq_sort();
 
                 let mut filename = self.fact_directory.clone().unwrap_or_default();
                 filename.push(file.as_str());
@@ -901,9 +901,11 @@ impl EGraph {
                         s => panic!("Unsupported type {} for input", s),
                     }
                 }
-                match func.schema.output.name().as_str() {
-                    "i64" | "String" | "Unit" => {}
-                    s => panic!("Unsupported type {} for input", s),
+                if !is_eq {
+                    match func.schema.output.name().as_str() {
+                        "i64" | "String" | "Unit" => {}
+                        s => panic!("Unsupported type {} for input", s),
+                    }
                 }
 
                 log::info!("Opening file '{:?}'...", filename);
@@ -930,7 +932,7 @@ impl EGraph {
 
                     let mut exprs: Vec<Expr> = str_buf.iter().map(|&s| parse(s)).collect();
 
-                    actions.push(if is_unit {
+                    actions.push(if is_eq {
                         Action::Expr(Expr::Call(name, exprs))
                     } else {
                         let out = exprs.pop().unwrap();
@@ -973,7 +975,7 @@ impl EGraph {
 
     pub fn term_to_string(&mut self, term: Value) -> String {
         let mut termdag = TermDag::default();
-        let (cost, expr) = self.print(term, &mut termdag, &self.get_sort(&term).unwrap());
+        let (_cost, expr) = self.print(term, &mut termdag, self.get_sort(&term).unwrap());
         termdag.to_string(&expr)
     }
 

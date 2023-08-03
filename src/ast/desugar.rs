@@ -898,7 +898,7 @@ impl Desugar {
             default: fdecl.default.clone(),
             merge: fdecl.merge.clone(),
             merge_action: flatten_actions(&fdecl.merge_action, self),
-            cost: fdecl.cost.clone(),
+            cost: fdecl.cost,
             unextractable: fdecl.unextractable,
         }));
         res

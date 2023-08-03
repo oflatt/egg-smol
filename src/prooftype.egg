@@ -5,4 +5,4 @@
 ;; provenance proofs `a` and `b`
 ;; When a proof `a = b` is used as a provenance proof, it is a proof of `b`
 
-(function ^Term_ (^) ProofTerm_)
+(function ^T_ (^) ProofTerm_)
