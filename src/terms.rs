@@ -72,18 +72,15 @@ impl ProofState {
                     {children_updated})
                    ({})
                     :ruleset {})",
-            if types.output.is_eq_sort() {
+            if types.is_datatype {
                 format!(
                     "(let rhs ({op} {children_updated}))
                      (set ({pname} rhs) rhs)
                      {}",
                     self.union(fdecl.schema.output, "lhs", "rhs")
                 )
-            } else if types.has_merge {
-                format!("(set ({op} {children_updated}) lhs)")
             } else {
-                assert!(types.output.name() == UNIT_SYM.into());
-                format!("({op} {children_updated})")
+                format!("(set ({op} {children_updated}) lhs)")
             },
             self.rebuilding_ruleset_name()
         );
@@ -226,7 +223,8 @@ impl ProofState {
                 let func_type = self.type_info.func_types.get(head).unwrap();
                 // desugar set to union when the merge
                 // function is union
-                if (func_type.output.is_eq_sort()) && !func_type.has_merge {
+                if func_type.is_datatype {
+                    assert!(func_type.output.is_eq_sort(), "{:?}", func_type);
                     self.parse_actions(
                         vec![self.init(func_type.output.name(), &expr.to_string())]
                             .into_iter()

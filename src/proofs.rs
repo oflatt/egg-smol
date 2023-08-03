@@ -55,7 +55,8 @@ impl ProofState {
     // the inputs.
     // For other terms, just use built-in terms
     fn make_term_table(&self, fdecl: &NormFunctionDecl) -> Vec<Command> {
-        if fdecl.merge.is_none() {
+        let types = self.type_info.func_types.get(&fdecl.name).unwrap();
+        if types.is_datatype {
             return vec![];
         }
         let input = fdecl
@@ -82,7 +83,7 @@ impl ProofState {
 
     fn make_prim_term_tables(&self) -> Vec<Command> {
         let mut res = vec![];
-        for (name, _sort) in TypeInfo::default().sorts {
+        for (name, _sort) in TypeInfo::default().prim_sorts {
             res.push(Command::Function(FunctionDecl {
                 name: self.term_func_name(name),
                 schema: Schema {
@@ -114,7 +115,7 @@ impl ProofState {
     fn get_term(&self, expr: &NormExpr, result: Option<Symbol>) -> String {
         let expr_type = self.type_info.lookup_expr(self.current_ctx, expr).unwrap();
         let NormExpr::Call(head, children) = expr;
-        if expr_type.has_merge {
+        if !expr_type.is_datatype {
             let output = if let Some(var) = result {
                 var.to_string()
             } else {
@@ -171,7 +172,7 @@ impl ProofState {
 
     fn add_proof_of(&self, expr: &NormExpr, proof: &str, result: Option<Symbol>) -> Vec<Action> {
         let expr_type = self.type_info.lookup_expr(self.current_ctx, expr).unwrap();
-        if expr_type.has_merge && result.is_none() {
+        if !expr_type.is_datatype && result.is_none() {
             return vec![];
         }
         let term = self.get_term(expr, result);

@@ -1137,7 +1137,7 @@ impl EGraph {
     }
 
     pub(crate) fn get_sort(&self, value: &Value) -> Option<&ArcSort> {
-        self.proof_state.type_info.sorts.get(&value.tag)
+        self.proof_state.type_info.prim_sorts.get(&value.tag)
     }
 
     pub fn add_arcsort(&mut self, arcsort: ArcSort) -> Result<(), TypeError> {

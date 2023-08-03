@@ -102,7 +102,7 @@ fn normalize_expr(
         Expr::Lit(l) => res.push(NormFact::AssignLit(lhs, l.clone())),
         Expr::Var(_v) => panic!("Should have been handled above"),
 
-        Expr::Call(f, children) if TypeInfo::default().is_primitive(*f) => {
+        Expr::Call(f, children) if TypeInfo::default().is_primitive_func(*f) => {
             let mut new_children = vec![];
             for child in children {
                 match child {
@@ -540,9 +540,7 @@ pub(crate) fn desugar_command(
         Command::SetOption { name, value } => {
             vec![NCommand::SetOption { name, value }]
         }
-        Command::Function(fdecl) => {
-            vec![NCommand::Function(desugar.desugar_function(&fdecl))]
-        }
+        Command::Function(fdecl) => desugar.desugar_function(&fdecl),
         Command::Declare { name, sort } => desugar.declare(name, sort),
         Command::Datatype { name, variants } => desugar_datatype(name, variants),
         Command::Rewrite(ruleset, rewrite) => {
@@ -882,15 +880,27 @@ impl Desugar {
         ]
     }
 
-    pub fn desugar_function(&mut self, fdecl: &FunctionDecl) -> NormFunctionDecl {
-        NormFunctionDecl {
+    pub fn desugar_function(&mut self, fdecl: &FunctionDecl) -> Vec<NCommand> {
+        let mut res = vec![];
+        let schema = if fdecl.schema.output.as_str() == UNIT_SYM {
+            let fresh_sort = self.fresh();
+            res.push(NCommand::Sort(fresh_sort, None));
+            Schema {
+                input: fdecl.schema.input.clone(),
+                output: fresh_sort,
+            }
+        } else {
+            fdecl.schema.clone()
+        };
+        res.push(NCommand::Function(NormFunctionDecl {
             name: fdecl.name,
-            schema: fdecl.schema.clone(),
+            schema,
             default: fdecl.default.clone(),
             merge: fdecl.merge.clone(),
             merge_action: flatten_actions(&fdecl.merge_action, self),
             cost: fdecl.cost.clone(),
             unextractable: fdecl.unextractable,
-        }
+        }));
+        res
     }
 }

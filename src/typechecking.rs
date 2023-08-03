@@ -4,16 +4,16 @@ use crate::{proofs::RULE_PROOF_KEYWORD, *};
 pub struct FuncType {
     pub input: Vec<ArcSort>,
     pub output: ArcSort,
-    pub has_merge: bool,
+    pub is_datatype: bool,
     pub has_default: bool,
 }
 
 impl FuncType {
-    pub fn new(input: Vec<ArcSort>, output: ArcSort, has_merge: bool, has_default: bool) -> Self {
+    pub fn new(input: Vec<ArcSort>, output: ArcSort, is_datatype: bool, has_default: bool) -> Self {
         Self {
             input,
             output,
-            has_merge,
+            is_datatype,
             has_default,
         }
     }
@@ -24,7 +24,7 @@ pub struct TypeInfo {
     // get the sort from the sorts name()
     pub presorts: HashMap<Symbol, PreSort>,
     pub presort_names: HashSet<Symbol>,
-    pub sorts: HashMap<Symbol, Arc<dyn Sort>>,
+    pub prim_sorts: HashMap<Symbol, Arc<dyn Sort>>,
     pub primitives: HashMap<Symbol, Vec<Primitive>>,
     pub func_types: HashMap<Symbol, FuncType>,
     pub global_types: HashMap<Symbol, ArcSort>,
@@ -36,7 +36,7 @@ impl Default for TypeInfo {
         let mut res = Self {
             presorts: Default::default(),
             presort_names: Default::default(),
-            sorts: Default::default(),
+            prim_sorts: Default::default(),
             primitives: Default::default(),
             func_types: Default::default(),
             global_types: Default::default(),
@@ -66,10 +66,10 @@ pub const UNIT_SYM: &str = "Unit";
 impl TypeInfo {
     pub(crate) fn infer_literal(&self, lit: &Literal) -> ArcSort {
         match lit {
-            Literal::Int(_) => self.sorts.get(&Symbol::from("i64")),
-            Literal::F64(_) => self.sorts.get(&Symbol::from("f64")),
-            Literal::String(_) => self.sorts.get(&Symbol::from("String")),
-            Literal::Unit => self.sorts.get(&Symbol::from("Unit")),
+            Literal::Int(_) => self.prim_sorts.get(&Symbol::from("i64")),
+            Literal::F64(_) => self.prim_sorts.get(&Symbol::from("f64")),
+            Literal::String(_) => self.prim_sorts.get(&Symbol::from("String")),
+            Literal::Unit => self.prim_sorts.get(&Symbol::from("Unit")),
         }
         .unwrap()
         .clone()
@@ -86,7 +86,7 @@ impl TypeInfo {
     pub fn add_arcsort(&mut self, sort: ArcSort) -> Result<(), TypeError> {
         let name = sort.name();
 
-        match self.sorts.entry(name) {
+        match self.prim_sorts.entry(name) {
             Entry::Occupied(_) => Err(TypeError::SortAlreadyBound(name)),
             Entry::Vacant(e) => {
                 e.insert(sort.clone());
@@ -97,7 +97,7 @@ impl TypeInfo {
     }
 
     pub fn get_sort<S: Sort + Send + Sync>(&self) -> Arc<S> {
-        for sort in self.sorts.values() {
+        for sort in self.prim_sorts.values() {
             let sort = sort.clone().as_arc_any();
             if let Ok(sort) = Arc::downcast(sort) {
                 return sort;
@@ -134,22 +134,22 @@ impl TypeInfo {
             .input
             .iter()
             .map(|name| {
-                if let Some(sort) = self.sorts.get(name) {
+                if let Some(sort) = self.prim_sorts.get(name) {
                     Ok(sort.clone())
                 } else {
                     Err(TypeError::Unbound(*name))
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let output = if let Some(sort) = self.sorts.get(&func.schema.output) {
+        let output = if let Some(sort) = self.prim_sorts.get(&func.schema.output) {
             Ok(sort.clone())
         } else {
             Err(TypeError::Unbound(func.schema.output))
         }?;
         Ok(FuncType::new(
             input,
-            output,
-            func.merge.is_some(),
+            output.clone(),
+            output.is_eq_sort() && !func.merge.is_some(),
             func.default.is_some(),
         ))
     }
@@ -157,10 +157,10 @@ impl TypeInfo {
     fn typecheck_ncommand(&mut self, command: &NCommand, id: CommandId) -> Result<(), TypeError> {
         match command {
             NCommand::Function(fdecl) => {
-                if self.sorts.contains_key(&fdecl.name) {
+                if self.is_primitive_sort(fdecl.name) {
                     return Err(TypeError::SortAlreadyBound(fdecl.name));
                 }
-                if self.is_primitive(fdecl.name) {
+                if self.is_primitive_func(fdecl.name) {
                     return Err(TypeError::PrimitiveAlreadyBound(fdecl.name));
                 }
                 let ftype = self.function_to_functype(fdecl)?;
@@ -531,7 +531,12 @@ impl TypeInfo {
 
     pub fn reserved_type(&self, sym: Symbol) -> Option<ArcSort> {
         if sym == RULE_PROOF_KEYWORD.into() {
-            Some(self.sorts.get::<Symbol>(&"Proof__".into()).unwrap().clone())
+            Some(
+                self.prim_sorts
+                    .get::<Symbol>(&"Proof__".into())
+                    .unwrap()
+                    .clone(),
+            )
         } else {
             None
         }
@@ -574,16 +579,15 @@ impl TypeInfo {
         Ok(())
     }
 
-    pub(crate) fn is_primitive(&self, sym: Symbol) -> bool {
+    pub(crate) fn is_primitive_func(&self, sym: Symbol) -> bool {
         self.primitives.contains_key(&sym) || self.presort_names.contains(&sym)
     }
 
-    fn lookup_func(
-        &self,
-        _ctx: CommandId,
-        sym: Symbol,
-        input_types: Vec<ArcSort>,
-    ) -> Result<FuncType, TypeError> {
+    pub(crate) fn is_primitive_sort(&self, sym: Symbol) -> bool {
+        self.prim_sorts.contains_key(&sym)
+    }
+
+    fn lookup_func(&self, sym: Symbol, input_types: Vec<ArcSort>) -> Result<FuncType, TypeError> {
         if let Some(found) = self.func_types.get(&sym) {
             Ok(found.clone())
         } else {
@@ -622,7 +626,7 @@ impl TypeInfo {
             }
         };
 
-        self.lookup_func(ctx, *head, child_types)
+        self.lookup_func(*head, child_types)
     }
 
     pub(crate) fn typecheck_expr(
@@ -649,7 +653,7 @@ impl TypeInfo {
                     self.set_local_type(ctx, *var, child_type.clone())?;
                 }
 
-                self.lookup_func(ctx, *head, child_types)
+                self.lookup_func(*head, child_types)
             }
         }
     }

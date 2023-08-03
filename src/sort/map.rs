@@ -24,8 +24,14 @@ impl MapSort {
         args: &[Expr],
     ) -> Result<ArcSort, TypeError> {
         if let [Expr::Var(k), Expr::Var(v)] = args {
-            let k = typeinfo.sorts.get(k).ok_or(TypeError::UndefinedSort(*k))?;
-            let v = typeinfo.sorts.get(v).ok_or(TypeError::UndefinedSort(*v))?;
+            let k = typeinfo
+                .prim_sorts
+                .get(k)
+                .ok_or(TypeError::UndefinedSort(*k))?;
+            let v = typeinfo
+                .prim_sorts
+                .get(v)
+                .ok_or(TypeError::UndefinedSort(*v))?;
 
             if k.is_eq_container_sort() || v.is_container_sort() {
                 return Err(TypeError::UndefinedSort(

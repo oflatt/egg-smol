@@ -109,7 +109,7 @@ impl<'a> Context<'a> {
     pub fn new(egraph: &'a EGraph) -> Self {
         Self {
             egraph,
-            unit: egraph.proof_state.type_info.sorts[&Symbol::from(UNIT_SYM)].clone(),
+            unit: egraph.proof_state.type_info.prim_sorts[&Symbol::from(UNIT_SYM)].clone(),
             types: Default::default(),
             errors: Vec::default(),
             unionfind: UnionFind::default(),
@@ -549,7 +549,7 @@ impl<'a> ExprChecker<'a> for ActionChecker<'a> {
             .unwrap();
         self.instructions.push(Instruction::CallFunction(
             f,
-            func_type.has_default || !func_type.has_merge,
+            func_type.has_default || func_type.is_datatype,
         ));
     }
 
@@ -906,7 +906,7 @@ impl EGraph {
                             &mut termdag,
                             self.proof_state
                                 .type_info
-                                .sorts
+                                .prim_sorts
                                 .get(&values[0].tag)
                                 .unwrap(),
                         );
