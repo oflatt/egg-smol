@@ -39,7 +39,7 @@ impl ProofState {
         .unwrap()
     }
 
-    fn make_canonicalize_func(&mut self, fdecl: &FunctionDecl) -> Vec<Command> {
+    fn make_canonicalize_func(&mut self, fdecl: &NormFunctionDecl) -> Vec<Command> {
         let types = self.type_info.func_types.get(&fdecl.name).unwrap().clone();
 
         let op = fdecl.name;

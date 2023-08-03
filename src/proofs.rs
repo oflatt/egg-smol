@@ -261,7 +261,7 @@ impl ProofState {
         let merged_term = format!(
             "({term_name} {} {})",
             ListDisplay(&children, " "),
-            fdecl.merge.unwrap()
+            fdecl.merge.as_ref().unwrap()
         );
         let rule_prf_name = self.rule_proof_name();
 
@@ -287,7 +287,7 @@ impl ProofState {
             merge_action: self.instrument_merge_actions(fdecl),
             cost: fdecl.cost,
             unextractable: fdecl.unextractable,
-            default: fdecl.default,
+            default: fdecl.default.clone(),
         }
     }
 
