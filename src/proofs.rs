@@ -125,7 +125,11 @@ impl ProofState {
             // put the input and look up the output
             format!("({term_name} {input_str} {output})")
         } else {
-            assert!(result.is_none());
+            assert!(
+                result.is_none(),
+                "Non-merge terms should not have results. Got: {}",
+                expr
+            );
             let term_name = self.term_func_name(expr_type.output.name());
             format!("({term_name} {expr})")
         }

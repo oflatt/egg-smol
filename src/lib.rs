@@ -589,7 +589,6 @@ impl EGraph {
 
         let apply_start = Instant::now();
         for (name, all_values, time) in searched {
-            eprintln!("{} actions", name);
             let rule = rules.get_mut(name).unwrap();
             rule.search_time += time;
             let num_vars = rule.query.vars.len();

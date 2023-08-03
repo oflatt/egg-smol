@@ -79,8 +79,11 @@ impl ProofState {
                      {}",
                     self.union(fdecl.schema.output, "lhs", "rhs")
                 )
-            } else {
+            } else if types.has_merge {
                 format!("(set ({op} {children_updated}) lhs)")
+            } else {
+                assert!(types.output.name() == UNIT_SYM.into());
+                format!("({op} {children_updated})")
             },
             self.rebuilding_ruleset_name()
         );
