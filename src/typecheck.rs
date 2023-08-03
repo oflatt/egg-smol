@@ -759,7 +759,15 @@ impl EGraph {
                         out.value
                     } else if make_defaults {
                         if function.merge.on_merge.is_some() {
-                            panic!("No value found for function {} with values {:?}", f, values);
+                            let terms = values
+                                .iter()
+                                .map(|v| self.term_to_string(*v))
+                                .collect::<Vec<String>>();
+                            panic!(
+                                "No value found for function {f} with values {values:?}.\n
+                            Children terms: {}",
+                                ListDisplay(terms, "\n")
+                            );
                         }
                         let ts = self.timestamp;
                         let out = &function.schema.output;
@@ -784,14 +792,32 @@ impl EGraph {
                                 value
                             }
                             _ => {
+                                let terms = values
+                                    .iter()
+                                    .map(|v| self.term_to_string(*v))
+                                    .collect::<Vec<String>>();
                                 return Err(Error::NotFoundError(NotFoundError(Expr::Var(
-                                    format!("No value found for {f} {:?}", values).into(),
-                                ))))
+                                    format!(
+                                        "No value found for {f} {:?}.\n Terms: {}",
+                                        values,
+                                        ListDisplay(terms, "\n")
+                                    )
+                                    .into(),
+                                ))));
                             }
                         }
                     } else {
+                        let terms = values
+                            .iter()
+                            .map(|v| self.term_to_string(*v))
+                            .collect::<Vec<String>>();
                         return Err(Error::NotFoundError(NotFoundError(Expr::Var(
-                            format!("No value found for {f} {:?}", values).into(),
+                            format!(
+                                "No value found looking up {f} {:?}. \n Terms: {}",
+                                values,
+                                ListDisplay(terms, "\n")
+                            )
+                            .into(),
                         ))));
                     };
 

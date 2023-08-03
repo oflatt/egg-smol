@@ -105,29 +105,35 @@ impl ProofState {
         format!("({term_name} {var})")
     }
 
-    fn get_proof(&self, expr: &NormExpr) -> String {
-        let term = self.get_term(&expr);
+    fn get_proof(&self, expr: &NormExpr, output: Option<Symbol>) -> String {
+        let term = self.get_term(expr, output);
         let proof_func = self.proof_func_name();
         format!("({proof_func} {term})")
     }
 
-    fn get_term(&self, expr: &NormExpr) -> String {
-        let expr_type = self.type_info.lookup_expr(self.current_ctx, &expr).unwrap();
+    fn get_term(&self, expr: &NormExpr, result: Option<Symbol>) -> String {
+        let expr_type = self.type_info.lookup_expr(self.current_ctx, expr).unwrap();
         let NormExpr::Call(head, children) = expr;
         if expr_type.has_merge {
+            let output = if let Some(var) = result {
+                var.to_string()
+            } else {
+                expr.to_string()
+            };
             let term_name = self.term_func_name(*head);
             let input_str = ListDisplay(children, " ");
             // put the input and look up the output
-            format!("({term_name} {input_str} {expr})")
+            format!("({term_name} {input_str} {output})")
         } else {
+            assert!(result.is_none());
             let term_name = self.term_func_name(expr_type.output.name());
             format!("({term_name} {expr})")
         }
     }
 
-    fn original(&self, expr: &NormExpr) -> String {
+    fn original(&self, expr: &NormExpr, output: Option<Symbol>) -> String {
         let underscores = "_".repeat(self.desugar.number_underscores);
-        let term = self.get_term(expr);
+        let term = self.get_term(expr, output);
 
         format!("(Original{underscores} {term})")
     }
@@ -141,33 +147,39 @@ impl ProofState {
             NormAction::Delete(..) | NormAction::Extract(..) | NormAction::Panic(..) => {
                 vec![]
             }
-            NormAction::Let(_lhs, expr) => {
-                vec![Command::Action(
-                    self.add_proof_of(expr, &self.original(expr)),
-                )]
-            }
+            NormAction::Let(_lhs, expr) => self
+                .add_proof_of(expr, &self.original(expr, None), None)
+                .into_iter()
+                .map(Command::Action)
+                .collect(),
             NormAction::Union(_lhs, _rhs) => {
                 panic!("Union should have been desugared by term encoding");
             }
             NormAction::LetLit(_lhs, _lit) => vec![],
             NormAction::LetVar(..) => vec![],
-            NormAction::Set(expr, _var) => vec![Command::Action(
-                self.add_proof_of(expr, &self.original(expr)),
-            )],
+            NormAction::Set(expr, var) => self
+                .add_proof_of(expr, &self.original(expr, Some(*var)), Some(*var))
+                .into_iter()
+                .map(Command::Action)
+                .collect(),
         }
     }
 
-    fn add_proof_of(&self, expr: &NormExpr, proof: &str) -> Action {
-        let term = self.get_term(expr);
+    fn add_proof_of(&self, expr: &NormExpr, proof: &str, result: Option<Symbol>) -> Vec<Action> {
+        let expr_type = self.type_info.lookup_expr(self.current_ctx, expr).unwrap();
+        if expr_type.has_merge && result.is_none() {
+            return vec![];
+        }
+        let term = self.get_term(expr, result);
         let proof_func = self.proof_func_name();
         let res = self.parse_actions(vec![format!("(set ({proof_func} {term}) {proof})")]);
         assert!(res.len() == 1);
-        res.into_iter().next().unwrap()
+        vec![res.into_iter().next().unwrap()]
     }
 
     fn fact_proof(&self, fact: &NormFact) -> Option<String> {
         match fact {
-            NormFact::Assign(lhs, expr) => Some(self.get_proof(expr)),
+            NormFact::Assign(_lhs, expr) => Some(self.get_proof(expr, None)),
             _ => None,
         }
     }
@@ -195,13 +207,12 @@ impl ProofState {
     fn actions_add_proof(&mut self, actions: &Vec<NormAction>, prf: Symbol) -> Vec<Action> {
         let mut res = vec![];
         for action in actions {
-            res.push(action.to_action());
             match action {
                 NormAction::Let(_lhs, expr) => {
-                    res.push(self.add_proof_of(expr, prf.into()));
+                    res.extend(self.add_proof_of(expr, prf.into(), None));
                 }
-                NormAction::Set(expr, _var) => {
-                    res.push(self.add_proof_of(expr, prf.into()));
+                NormAction::Set(expr, var) => {
+                    res.extend(self.add_proof_of(expr, prf.into(), Some(*var)));
                 }
                 NormAction::Union(..) => panic!("Union should have been desugared"),
                 NormAction::LetLit(..)
@@ -210,6 +221,7 @@ impl ProofState {
                 | NormAction::Extract(..)
                 | NormAction::Panic(..) => {}
             }
+            res.push(action.to_action());
         }
         res
     }
@@ -291,7 +303,7 @@ impl ProofState {
         match &command {
             NCommand::Function(fdecl) => vec_append(
                 self.make_term_table(fdecl),
-                vec![Command::Function(self.instrument_fdecl(&fdecl))],
+                vec![Command::Function(self.instrument_fdecl(fdecl))],
             ),
             NCommand::Sort(sort, _pre) => vec_append(
                 vec![command.to_command()],

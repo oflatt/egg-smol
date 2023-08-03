@@ -30,6 +30,10 @@ impl EGraph {
         None
     }
 
+    pub fn print(&self, value: Value, termdag: &mut TermDag, arcsort: &ArcSort) -> (Cost, Term) {
+        Extractor::new(self, termdag, false).find_best(value, termdag, arcsort)
+    }
+
     pub fn extract(&self, value: Value, termdag: &mut TermDag, arcsort: &ArcSort) -> (Cost, Term) {
         Extractor::new(self, termdag, true).find_best(value, termdag, arcsort)
     }

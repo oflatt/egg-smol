@@ -589,6 +589,7 @@ impl EGraph {
 
         let apply_start = Instant::now();
         for (name, all_values, time) in searched {
+            eprintln!("{} actions", name);
             let rule = rules.get_mut(name).unwrap();
             rule.search_time += time;
             let num_vars = rule.query.vars.len();
@@ -969,6 +970,12 @@ impl EGraph {
         for f in self.functions.values_mut() {
             f.clear();
         }
+    }
+
+    pub fn term_to_string(&mut self, term: Value) -> String {
+        let mut termdag = TermDag::default();
+        let (cost, expr) = self.print(term, &mut termdag, &self.get_sort(&term).unwrap());
+        termdag.to_string(&expr)
     }
 
     // Extract an expression from the current state, returning the cost, the extracted expression and some number

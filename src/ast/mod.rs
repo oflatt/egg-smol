@@ -434,6 +434,9 @@ impl Display for Command {
             Command::Check(facts) => {
                 write!(f, "(check {})", ListDisplay(facts, "\n"))
             }
+            Command::Function(fdecl) => {
+                write!(f, "{}", fdecl)
+            }
             _ => write!(f, "{}", self.to_sexp()),
         }
     }
@@ -506,6 +509,12 @@ pub struct FunctionDecl {
     pub merge_action: Vec<Action>,
     pub cost: Option<usize>,
     pub unextractable: bool,
+}
+
+impl Display for FunctionDecl {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_sexp())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
