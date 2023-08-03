@@ -75,6 +75,10 @@ impl TypeInfo {
         .clone()
     }
 
+    pub(crate) fn merge_fn_child_name(&self, index: usize) -> Symbol {
+        Symbol::from(format!("child{}", index,))
+    }
+
     pub fn add_sort<S: Sort + 'static>(&mut self, sort: S) {
         self.add_arcsort(Arc::new(sort)).unwrap()
     }
@@ -160,9 +164,18 @@ impl TypeInfo {
                     return Err(TypeError::PrimitiveAlreadyBound(fdecl.name));
                 }
                 let ftype = self.function_to_functype(fdecl)?;
-                if self.func_types.insert(fdecl.name, ftype).is_some() {
+                if self.func_types.insert(fdecl.name, ftype.clone()).is_some() {
                     return Err(TypeError::FunctionAlreadyBound(fdecl.name));
                 }
+
+                // now typecheck merge action
+                self.set_local_type(id, "old".into(), ftype.output.clone())?;
+                self.set_local_type(id, "new".into(), ftype.output.clone())?;
+                for (i, input) in ftype.input.iter().enumerate() {
+                    self.set_local_type(id, self.merge_fn_child_name(i), input.clone())?;
+                }
+
+                self.typecheck_actions(id, &fdecl.merge_action)?;
             }
             NCommand::NormRule {
                 rule,
@@ -581,7 +594,6 @@ impl TypeInfo {
                     }
                 }
             }
-
             Err(TypeError::NoMatchingPrimitive {
                 op: sym,
                 inputs: input_types.iter().map(|s| s.name()).collect(),

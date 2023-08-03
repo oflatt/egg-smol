@@ -6,11 +6,3 @@
 ;; When a proof `a = b` is used as a provenance proof, it is a proof of `b`
 
 (function ^Term_ (^) ProofTerm_)
-
-;; justifies the fact that a rule fired
-(function ^Rule_ (ProofList_ String) Proof_)
-;; using a rule justification,
-;; proves a term exists
-(function ^RuleTerm_ (Proof_ ^) Proof_)
-;; using a rule justification, proves two terms are equal
-(function ^RuleEquality_ (Proof_ ^ ^) Proof_)

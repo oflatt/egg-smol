@@ -82,6 +82,12 @@ impl Function {
             let mut types = IndexMap::<Symbol, ArcSort>::default();
             types.insert("old".into(), output.clone());
             types.insert("new".into(), output.clone());
+            for (i, _s) in decl.schema.input.iter().enumerate() {
+                types.insert(
+                    egraph.proof_state.type_info.merge_fn_child_name(i),
+                    input[i].clone(),
+                );
+            }
             let program = egraph
                 .compile_actions(&types, &decl.merge_action)
                 .map_err(Error::TypeErrors)?;

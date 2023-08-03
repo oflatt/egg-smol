@@ -230,10 +230,6 @@ impl ProofState {
         self.desugar.fresh()
     }
 
-    pub(crate) fn merge_fn_child_name(&self, index: usize) -> Symbol {
-        Symbol::from(format!("child{}", index,))
-    }
-
     // TODO this terrible function can go away if we desugar merge functions
     pub(crate) fn instrument_merge_actions(&mut self, fdecl: &NormFunctionDecl) -> Vec<Action> {
         if fdecl.merge.is_none() {
@@ -245,7 +241,7 @@ impl ProofState {
             .input
             .iter()
             .enumerate()
-            .map(|(i, _)| self.merge_fn_child_name(i))
+            .map(|(i, _)| self.type_info.merge_fn_child_name(i))
             .collect::<Vec<_>>();
         let name = fdecl.name;
         let term_name = self.term_func_name(name);
@@ -294,8 +290,8 @@ impl ProofState {
     fn add_proofs_command(&mut self, command: NCommand) -> Vec<Command> {
         match &command {
             NCommand::Function(fdecl) => vec_append(
-                vec![Command::Function(self.instrument_fdecl(&fdecl))],
                 self.make_term_table(fdecl),
+                vec![Command::Function(self.instrument_fdecl(&fdecl))],
             ),
             NCommand::Sort(sort, _pre) => vec_append(
                 vec![command.to_command()],

@@ -817,10 +817,11 @@ impl EGraph {
                     // except for setting the parent relation
                     let new_value = stack.pop().unwrap();
                     let new_len = stack.len() - function.schema.input.len();
-                    let args = &stack[new_len..];
+                    // TODO use slice ref instead of building vec
+                    let args = stack[new_len..].to_vec();
 
                     // We should only have canonical values here: omit the canonicalization step
-                    let old_value = function.get(args);
+                    let old_value = function.get(args.as_slice());
 
                     if let Some(old_value) = old_value {
                         if new_value != old_value {
@@ -832,7 +833,7 @@ impl EGraph {
                                     panic!("There should be no union merge functions after term encoding");
                                 }
                                 MergeFn::Expr(merge_prog) => {
-                                    let values = [old_value, new_value];
+                                    let values = vec![old_value, new_value];
                                     let old_len = stack.len();
                                     self.run_actions(stack, &values, &merge_prog, true)?;
                                     let result = stack.pop().unwrap();
@@ -848,7 +849,8 @@ impl EGraph {
                             // re-borrow
                             let function = self.functions.get_mut(f).unwrap();
                             if let Some(prog) = function.merge.on_merge.clone() {
-                                let values = [old_value, new_value];
+                                let mut values = vec![old_value, new_value];
+                                values.extend(args.clone());
                                 // XXX: we get an error if we pass the current
                                 // stack and then truncate it to the old length.
                                 // Why?
@@ -856,7 +858,7 @@ impl EGraph {
                             }
                         }
                     } else {
-                        function.insert(args, new_value, self.timestamp);
+                        function.insert(args.as_slice(), new_value, self.timestamp);
                     }
                     stack.truncate(new_len)
                 }
