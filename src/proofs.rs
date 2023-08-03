@@ -315,8 +315,8 @@ impl ProofState {
                 self.parse_program(&self.make_proof_type(sort)).unwrap(),
             ),
             NCommand::NormAction(action) => vec_append(
-                vec![command.to_command()],
                 self.add_proofs_action_original(action),
+                vec![command.to_command()],
             ),
             NCommand::NormRule {
                 name,
