@@ -214,10 +214,6 @@ impl ProofState {
 
                 res
             }
-            NormAction::LetLit(..)
-            | NormAction::LetVar(..)
-            | NormAction::Panic(..)
-            | NormAction::Extract(..) => vec![action.to_action()],
             NormAction::Set(expr, var) => {
                 let NormExpr::Call(head, _args) = expr;
                 let func_type = self.type_info.func_types.get(head).unwrap();
@@ -251,6 +247,7 @@ impl ProofState {
                     &rhs.to_string(),
                 )])
             }
+            _ => vec![action.to_action()],
         }
     }
 

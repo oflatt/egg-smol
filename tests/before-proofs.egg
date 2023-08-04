@@ -32,3 +32,8 @@
 
 (check (= addx2
           addx20))
+
+(rule ((= addx2 addx20))
+      ((print rule-proof))
+      :ruleset proof)
+(run proof 1)

@@ -132,7 +132,10 @@ impl ProofState {
     fn add_proofs_action_original(&self, action: &NormAction) -> Vec<Command> {
         let original_prf_fn = |term| format!("({} {})", self.original_name(), term);
         match action {
-            NormAction::Delete(..) | NormAction::Extract(..) | NormAction::Panic(..) => {
+            NormAction::Delete(..)
+            | NormAction::Extract(..)
+            | NormAction::Panic(..)
+            | NormAction::Print(..) => {
                 vec![]
             }
             NormAction::Let(_lhs, expr) => self
@@ -225,11 +228,7 @@ impl ProofState {
                     res.extend(self.add_proof_of(expr, prf, Some(*var)));
                 }
                 NormAction::Union(..) => panic!("Union should have been desugared"),
-                NormAction::LetLit(..)
-                | NormAction::LetVar(..)
-                | NormAction::Delete(..)
-                | NormAction::Extract(..)
-                | NormAction::Panic(..) => {}
+                _ => {}
             }
             res.push(action.to_action());
         }

@@ -483,6 +483,11 @@ impl<'a> ActionChecker<'a> {
                 self.instructions.push(Instruction::Extract(2));
                 Ok(())
             }
+            Action::Print(expr) => {
+                let (_, _ty) = self.infer_expr(expr)?;
+                self.instructions.push(Instruction::Print);
+                Ok(())
+            }
             Action::Delete(f, args) => {
                 let fake_call = Expr::Call(*f, args.clone());
                 let (_, _ty) = self.infer_expr(&fake_call)?;
@@ -669,6 +674,7 @@ enum Instruction {
     Set(Symbol),
     Union(usize),
     Extract(usize),
+    Print,
     Panic(String),
     Pop,
 }
@@ -879,6 +885,11 @@ impl EGraph {
                 }
                 Instruction::Union(_arity) => {
                     panic!("term encoding gets rid of union");
+                }
+                Instruction::Print => {
+                    let to_print = stack.pop().unwrap();
+                    let extracted = self.term_to_string(to_print);
+                    log::info!("printing: {}", extracted);
                 }
                 Instruction::Extract(arity) => {
                     let new_len = stack.len() - arity;
