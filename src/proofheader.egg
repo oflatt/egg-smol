@@ -11,4 +11,5 @@
 
 
 (function Original_ (ProofTerm_) Proof_)
-(function RuleProof_ (String ProofList_) Proof_)
+;; Proves a particular term exists using a rule
+(function RuleProof_ (String ProofList_ ProofTerm_) Proof_)

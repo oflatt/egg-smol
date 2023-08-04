@@ -32,7 +32,7 @@ impl ProofState {
         format!("ProofTerm{}", "_".repeat(self.desugar.number_underscores)).into()
     }
 
-    fn proof_func_name(&self) -> Symbol {
+    pub(crate) fn proof_func_name(&self) -> Symbol {
         format!("ProofOf{}", "_".repeat(self.desugar.number_underscores)).into()
     }
 
@@ -121,24 +121,22 @@ impl ProofState {
         }
     }
 
-    fn original(&self, expr: &NormExpr, output: Option<Symbol>) -> String {
-        let underscores = "_".repeat(self.desugar.number_underscores);
-        let term = self.get_term(expr, output);
-
-        format!("(Original{underscores} {term})")
+    fn original_name(&self) -> String {
+        format!("Original{}", "_".repeat(self.desugar.number_underscores))
     }
 
-    fn rule_proof_name(&self) -> String {
+    fn rule_proof_constructor(&self) -> String {
         format!("RuleProof{}", "_".repeat(self.desugar.number_underscores))
     }
 
     fn add_proofs_action_original(&self, action: &NormAction) -> Vec<Command> {
+        let original_prf_fn = |term| format!("({} {})", self.original_name(), term);
         match action {
             NormAction::Delete(..) | NormAction::Extract(..) | NormAction::Panic(..) => {
                 vec![]
             }
             NormAction::Let(_lhs, expr) => self
-                .add_proof_of(expr, &self.original(expr, None), None)
+                .add_proof_of(expr, original_prf_fn, None)
                 .into_iter()
                 .map(Command::Action)
                 .collect(),
@@ -148,14 +146,22 @@ impl ProofState {
             NormAction::LetLit(_lhs, _lit) => vec![],
             NormAction::LetVar(..) => vec![],
             NormAction::Set(expr, var) => self
-                .add_proof_of(expr, &self.original(expr, Some(*var)), Some(*var))
+                .add_proof_of(expr, original_prf_fn, Some(*var))
                 .into_iter()
                 .map(Command::Action)
                 .collect(),
         }
     }
 
-    fn add_proof_of(&self, expr: &NormExpr, proof: &str, result: Option<Symbol>) -> Vec<Action> {
+    fn add_proof_of<ProofFunc>(
+        &self,
+        expr: &NormExpr,
+        proof: ProofFunc,
+        result: Option<Symbol>,
+    ) -> Vec<Action>
+    where
+        ProofFunc: Fn(String) -> String,
+    {
         let expr_type = self.type_info.lookup_expr(self.current_ctx, expr).unwrap();
         // no proof needed for primitives
         // or just lookups
@@ -166,6 +172,7 @@ impl ProofState {
         }
         let term = self.get_term(expr, result);
         let proof_func = self.proof_func_name();
+        let proof = proof(term.clone());
         let res = self.parse_actions(vec![format!("(set ({proof_func} {term}) {proof})")]);
         assert!(res.len() == 1);
         vec![res.into_iter().next().unwrap()]
@@ -198,15 +205,24 @@ impl ProofState {
         res
     }
 
-    fn actions_add_proof(&mut self, actions: &Vec<NormAction>, prf: Symbol) -> Vec<Action> {
+    fn actions_add_proof<ProofFunc>(
+        &mut self,
+        actions: &Vec<NormAction>,
+        // The proof func wraps a proof around the
+        // term being proven
+        prf: &ProofFunc,
+    ) -> Vec<Action>
+    where
+        ProofFunc: Fn(String) -> String,
+    {
         let mut res = vec![];
         for action in actions {
             match action {
                 NormAction::Let(_lhs, expr) => {
-                    res.extend(self.add_proof_of(expr, prf.into(), None));
+                    res.extend(self.add_proof_of(expr, prf, None));
                 }
                 NormAction::Set(expr, var) => {
-                    res.extend(self.add_proof_of(expr, prf.into(), Some(*var)));
+                    res.extend(self.add_proof_of(expr, prf, Some(*var)));
                 }
                 NormAction::Union(..) => panic!("Union should have been desugared"),
                 NormAction::LetLit(..)
@@ -222,12 +238,15 @@ impl ProofState {
 
     fn rule_add_proofs(&mut self, rule: &NormRule, name: Symbol) -> Vec<Action> {
         let rule_proof = self.fresh().as_str();
-        let rule_proof_name = self.rule_proof_name();
-        let mut res = self.parse_actions(vec![format!(
-            "(let {rule_proof} ({rule_proof_name} \"{name}\" {}))",
-            self.rule_proof(rule)
-        )]);
-        res.extend(self.actions_add_proof(&rule.head, rule_proof.into()));
+        let rule_name = self.fresh().as_str();
+        let rule_proof_name = self.rule_proof_constructor();
+        let mut res = self.parse_actions(vec![
+            format!("(let {rule_proof} {})", self.rule_proof(rule)),
+            format!("(let {rule_name} \"{name}\")"),
+        ]);
+        let proof_func =
+            |term: String| format!("({rule_proof_name} {rule_name} {rule_proof} {})", term);
+        res.extend(self.actions_add_proof(&rule.head, &proof_func));
 
         res
     }
@@ -265,19 +284,25 @@ impl ProofState {
             ListDisplay(&children, " "),
             fdecl.merge.as_ref().unwrap()
         );
-        let rule_prf_name = self.rule_proof_name();
+        let rule_prf_constructor = self.rule_proof_constructor();
 
         let rule_name = format!("\"{name}-merge-fn\"");
-        let rule_prf = format!(
-            "({rule_prf_name} {rule_name} {})",
-            self.proof_cons(old_prf, self.proof_cons(new_expr, self.proof_null()))
-        );
+        let rule_name_var = self.fresh().as_str();
+        let rule_prf = self.proof_cons(old_prf, self.proof_cons(new_expr, self.proof_null()));
+        let rule_prf_name = self.fresh().as_str();
+        let prf_fn =
+            |term: String| format!("({rule_prf_constructor} {rule_name} {rule_prf} {})", term);
 
         vec_append(
-            self.parse_actions(vec![format!(
-                "(set ({proof_func} {merged_term}) {rule_prf})"
-            )]),
-            self.actions_add_proof(&fdecl.merge_action, rule_prf.into()),
+            self.parse_actions(vec![
+                format!("(let {rule_name_var} {rule_name})"),
+                format!("(let {rule_prf_name} {rule_prf})"),
+                format!(
+                    "(set ({proof_func} {merged_term}) {})",
+                    prf_fn(merged_term.clone())
+                ),
+            ]),
+            self.actions_add_proof(&fdecl.merge_action, &prf_fn),
         )
     }
 

@@ -2,6 +2,7 @@ pub mod ast;
 mod extract;
 mod function;
 mod gj;
+mod proof_checker;
 mod proofs;
 mod serialize;
 pub mod sort;
@@ -17,6 +18,7 @@ use extract::Extractor;
 use hashbrown::hash_map::Entry;
 use index::ColumnIndex;
 use instant::{Duration, Instant};
+use proof_checker::ProofChecker;
 pub use serialize::SerializeConfig;
 use sort::*;
 use termdag::{Term, TermDag};
@@ -822,7 +824,22 @@ impl EGraph {
                     "Skipping check.".into()
                 }
             }
-            NCommand::CheckProof => "TODO implement proofs".into(),
+            NCommand::CheckProof => {
+                if !self.proofs_enabled {
+                    return Err(Error::ProofsDisabled);
+                } else {
+                    let (terms, termdag) = self
+                        .function_to_dag(self.proof_state.proof_func_name(), usize::MAX)
+                        .unwrap();
+                    ProofChecker::check(
+                        terms.into_iter().map(|(_, output)| output).collect(),
+                        termdag,
+                        self,
+                    );
+
+                    "Checked all proofs.".into()
+                }
+            }
             NCommand::NormAction(action) => {
                 if should_run {
                     match &action {
@@ -1179,6 +1196,8 @@ pub enum Error {
     ExpectFail,
     #[error("IO error: {0}: {1}")]
     IoError(PathBuf, std::io::Error),
+    #[error("Tried to check proofs but proofs are disabled")]
+    ProofsDisabled,
 }
 
 fn safe_shl(a: usize, b: usize) -> usize {
