@@ -992,7 +992,7 @@ impl EGraph {
 
     pub fn term_to_string(&mut self, term: Value) -> String {
         let mut termdag = TermDag::default();
-        let (_cost, expr) = self.print(term, &mut termdag, self.get_sort(&term).unwrap());
+        let (_cost, expr) = self.print(term, &mut termdag, &self.get_sort(&term).unwrap());
         termdag.to_string(&expr)
     }
 
@@ -1155,12 +1155,8 @@ impl EGraph {
         self.functions.values().map(|f| f.nodes.len()).sum()
     }
 
-    pub(crate) fn get_sort(&self, value: &Value) -> Option<&ArcSort> {
-        self.proof_state.type_info.prim_sorts.get(&value.tag)
-    }
-
-    pub fn add_arcsort(&mut self, arcsort: ArcSort) -> Result<(), TypeError> {
-        self.proof_state.type_info.add_arcsort(arcsort)
+    pub(crate) fn get_sort(&self, value: &Value) -> Option<ArcSort> {
+        self.proof_state.type_info.name_to_sort(&value.tag)
     }
 
     // Gets the last extract report and returns it, if the last command saved it.

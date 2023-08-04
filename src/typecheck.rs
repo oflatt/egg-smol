@@ -904,10 +904,10 @@ impl EGraph {
                         let (cost, expr) = self.extract(
                             values[0],
                             &mut termdag,
-                            self.proof_state
+                            &self
+                                .proof_state
                                 .type_info
-                                .prim_sorts
-                                .get(&values[0].tag)
+                                .name_to_sort(&values[0].tag)
                                 .unwrap(),
                         );
                         log::info!("extracted with cost {cost}: {}", termdag.to_string(&expr));

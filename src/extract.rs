@@ -104,7 +104,7 @@ impl<'a> Extractor<'a> {
         let mut children = vec![];
         for value in node.inputs {
             let arcsort = self.egraph.get_sort(value).unwrap();
-            children.push(self.find_best(*value, termdag, arcsort).1)
+            children.push(self.find_best(*value, termdag, &arcsort).1)
         }
 
         termdag.make(node.sym, children)

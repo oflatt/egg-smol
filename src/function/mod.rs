@@ -51,7 +51,7 @@ impl Function {
         assert!(!egraph.functions.contains_key(&decl.name));
         let mut input = Vec::with_capacity(decl.schema.input.len());
         for s in &decl.schema.input {
-            input.push(match egraph.proof_state.type_info.prim_sorts.get(s) {
+            input.push(match egraph.proof_state.type_info.name_to_sort(s) {
                 Some(sort) => sort.clone(),
                 None => return Err(Error::TypeError(TypeError::Unbound(*s))),
             })
@@ -60,8 +60,7 @@ impl Function {
         let output = match egraph
             .proof_state
             .type_info
-            .prim_sorts
-            .get(&decl.schema.output)
+            .name_to_sort(&decl.schema.output)
         {
             Some(sort) => sort.clone(),
             None => return Err(Error::TypeError(TypeError::Unbound(decl.schema.output))),

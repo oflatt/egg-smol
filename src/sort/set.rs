@@ -24,8 +24,7 @@ impl SetSort {
     ) -> Result<ArcSort, TypeError> {
         if let [Expr::Var(e)] = args {
             let e = typeinfo
-                .prim_sorts
-                .get(e)
+                .name_to_sort(e)
                 .ok_or(TypeError::UndefinedSort(*e))?;
 
             if e.is_eq_container_sort() {

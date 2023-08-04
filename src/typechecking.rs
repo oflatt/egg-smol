@@ -32,7 +32,8 @@ pub struct TypeInfo {
     // get the sort from the sorts name()
     pub presorts: HashMap<Symbol, PreSort>,
     pub presort_names: HashSet<Symbol>,
-    pub prim_sorts: HashMap<Symbol, Arc<dyn Sort>>,
+    pub(crate) prim_sorts: HashMap<Symbol, Arc<dyn Sort>>,
+    sorts: HashMap<Symbol, Arc<dyn Sort>>,
     pub primitives: HashMap<Symbol, Vec<Primitive>>,
     pub func_types: HashMap<Symbol, FuncType>,
     pub global_types: HashMap<Symbol, ArcSort>,
@@ -45,17 +46,18 @@ impl Default for TypeInfo {
             presorts: Default::default(),
             presort_names: Default::default(),
             prim_sorts: Default::default(),
+            sorts: Default::default(),
             primitives: Default::default(),
             func_types: Default::default(),
             global_types: Default::default(),
             local_types: Default::default(),
         };
 
-        res.add_sort(UnitSort::new(UNIT_SYM.into()));
-        res.add_sort(StringSort::new("String".into()));
-        res.add_sort(I64Sort::new("i64".into()));
-        res.add_sort(F64Sort::new("f64".into()));
-        res.add_sort(RationalSort::new("Rational".into()));
+        res.add_sort(UnitSort::new(UNIT_SYM.into()), true);
+        res.add_sort(StringSort::new("String".into()), true);
+        res.add_sort(I64Sort::new("i64".into()), true);
+        res.add_sort(F64Sort::new("f64".into()), true);
+        res.add_sort(RationalSort::new("Rational".into()), true);
 
         res.presort_names.extend(MapSort::presort_names());
         res.presort_names.extend(SetSort::presort_names());
@@ -87,25 +89,41 @@ impl TypeInfo {
         Symbol::from(format!("child{}", index,))
     }
 
-    pub fn add_sort<S: Sort + 'static>(&mut self, sort: S) {
-        self.add_arcsort(Arc::new(sort)).unwrap()
+    pub fn add_sort<S: Sort + 'static>(&mut self, sort: S, is_primitive: bool) {
+        self.add_arcsort(Arc::new(sort), is_primitive).unwrap()
     }
 
-    pub fn add_arcsort(&mut self, sort: ArcSort) -> Result<(), TypeError> {
+    pub fn name_to_sort(&self, name: &Symbol) -> Option<Arc<dyn Sort>> {
+        self.prim_sorts
+            .get(name)
+            .cloned()
+            .or_else(|| self.sorts.get(name).cloned())
+    }
+
+    pub fn add_arcsort(&mut self, sort: ArcSort, is_primitive: bool) -> Result<(), TypeError> {
         let name = sort.name();
 
-        match self.prim_sorts.entry(name) {
-            Entry::Occupied(_) => Err(TypeError::SortAlreadyBound(name)),
-            Entry::Vacant(e) => {
-                e.insert(sort.clone());
-                sort.register_primitives(self);
-                Ok(())
-            }
+        if self.prim_sorts.contains_key(&name) || self.sorts.contains_key(&name) {
+            return Err(TypeError::SortAlreadyBound(name));
         }
+        if is_primitive {
+            self.prim_sorts.insert(name, sort.clone());
+            sort.register_primitives(self);
+        } else {
+            self.sorts.insert(name, sort);
+        }
+        Ok(())
     }
 
     pub fn get_sort<S: Sort + Send + Sync>(&self) -> Arc<S> {
         for sort in self.prim_sorts.values() {
+            let sort = sort.clone().as_arc_any();
+            if let Ok(sort) = Arc::downcast(sort) {
+                return sort;
+            }
+        }
+
+        for sort in self.sorts.values() {
             let sort = sort.clone().as_arc_any();
             if let Ok(sort) = Arc::downcast(sort) {
                 return sort;
@@ -142,14 +160,14 @@ impl TypeInfo {
             .input
             .iter()
             .map(|name| {
-                if let Some(sort) = self.prim_sorts.get(name) {
+                if let Some(sort) = self.name_to_sort(name) {
                     Ok(sort.clone())
                 } else {
                     Err(TypeError::Unbound(*name))
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let output = if let Some(sort) = self.prim_sorts.get(&func.schema.output) {
+        let output = if let Some(sort) = self.name_to_sort(&func.schema.output) {
             Ok(sort.clone())
         } else {
             Err(TypeError::Unbound(func.schema.output))
@@ -273,7 +291,7 @@ impl TypeInfo {
             }
             None => Arc::new(EqSort { name }),
         };
-        self.add_arcsort(sort)
+        self.add_arcsort(sort, false)
     }
 
     fn typecheck_rule(&mut self, ctx: CommandId, rule: &NormRule) -> Result<(), TypeError> {
@@ -546,8 +564,8 @@ impl TypeInfo {
     pub fn reserved_type(&self, sym: Symbol) -> Option<ArcSort> {
         if sym == RULE_PROOF_KEYWORD.into() {
             Some(
-                self.prim_sorts
-                    .get::<Symbol>(&"Proof__".into())
+                self.sorts
+                    .get::<Symbol>(&"Proof___".into())
                     .unwrap()
                     .clone(),
             )
