@@ -357,7 +357,11 @@ impl ProofState {
                     res.extend(with_term_encoding);
                     res.push(Command::Fail(Box::new(last)));
                 }
-                NCommand::SetOption { .. }
+                NCommand::GetProof(_query) => {
+                    panic!("GetProof should be desugared");
+                }
+                NCommand::LookupProof(..)
+                | NCommand::SetOption { .. }
                 | NCommand::Pop(..)
                 | NCommand::Push(..)
                 | NCommand::AddRuleset(..)

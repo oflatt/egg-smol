@@ -97,6 +97,22 @@ impl ProofState {
         format!("({proof_func} {term})")
     }
 
+    fn var_to_proof(&self, var: Symbol) -> String {
+        let term = self.var_to_term(var);
+        let proof_func = self.proof_func_name();
+        format!(
+            "({proof_func} {term})",
+            proof_func = proof_func,
+            term = term
+        )
+    }
+
+    fn var_to_term(&self, var: Symbol) -> String {
+        let var_type = self.type_info.lookup(self.current_ctx, var).unwrap();
+        let term_name = self.term_func_name(var_type.name());
+        format!("({term_name} {var})", term_name = term_name, var = var)
+    }
+
     fn get_term(&self, expr: &NormExpr, result: Option<Symbol>) -> String {
         let expr_type = self.type_info.lookup_expr(self.current_ctx, expr).unwrap();
         let NormExpr::Call(head, children) = expr;
@@ -345,6 +361,12 @@ impl ProofState {
                     },
                 }]
             }
+            NCommand::GetProof(..) => panic!("GetProof should have been desugared"),
+            NCommand::LookupProof(expr) => self
+                .parse_actions(vec![format!("(print {})", self.get_proof(expr, None))])
+                .into_iter()
+                .map(Command::Action)
+                .collect(),
             _ => vec![command.to_command()],
         }
     }

@@ -7,24 +7,7 @@ pub struct FuncType {
     pub is_datatype: bool,
     pub has_default: bool,
     pub is_primitive: bool,
-}
-
-impl FuncType {
-    pub fn new(
-        input: Vec<ArcSort>,
-        output: ArcSort,
-        is_datatype: bool,
-        has_default: bool,
-        is_primitive: bool,
-    ) -> Self {
-        Self {
-            input,
-            output,
-            is_datatype,
-            has_default,
-            is_primitive,
-        }
-    }
+    pub unextractable: bool,
 }
 
 #[derive(Clone)]
@@ -172,13 +155,14 @@ impl TypeInfo {
         } else {
             Err(TypeError::Unbound(func.schema.output))
         }?;
-        Ok(FuncType::new(
+        Ok(FuncType {
             input,
-            output.clone(),
-            output.is_eq_sort() && func.merge.is_none(),
-            func.default.is_some(),
-            false,
-        ))
+            output: output.clone(),
+            is_datatype: output.is_eq_sort() && func.merge.is_none(),
+            has_default: func.default.is_some(),
+            is_primitive: false,
+            unextractable: func.unextractable,
+        })
     }
 
     fn typecheck_ncommand(&mut self, command: &NCommand, id: CommandId) -> Result<(), TypeError> {
@@ -637,7 +621,14 @@ impl TypeInfo {
             if let Some(prims) = self.primitives.get(&sym) {
                 for prim in prims {
                     if let Some(return_type) = prim.accept(&input_types) {
-                        return Ok(FuncType::new(input_types, return_type, false, true, true));
+                        return Ok(FuncType {
+                            input: input_types,
+                            output: return_type,
+                            is_datatype: false,
+                            has_default: true,
+                            is_primitive: true,
+                            unextractable: true,
+                        });
                     }
                 }
             }

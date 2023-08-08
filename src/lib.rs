@@ -826,7 +826,7 @@ impl EGraph {
             }
             NCommand::CheckProof => {
                 if !self.proofs_enabled {
-                    return Err(Error::ProofsDisabled);
+                    return Err(Error::ProofsDisabled("check proofs".into()));
                 } else {
                     let (terms, termdag) = self
                         .function_to_dag(self.proof_state.proof_func_name(), usize::MAX)
@@ -838,6 +838,16 @@ impl EGraph {
                     );
 
                     "Checked all proofs.".into()
+                }
+            }
+            NCommand::GetProof(..) => {
+                panic!("Get proof should have been desugared away");
+            }
+            NCommand::LookupProof(..) => {
+                if self.proofs_enabled {
+                    panic!("Lookup proof should have been desugared away");
+                } else {
+                    return Err(Error::ProofsDisabled("lookup proof".into()));
                 }
             }
             NCommand::NormAction(action) => {
@@ -1192,8 +1202,10 @@ pub enum Error {
     ExpectFail,
     #[error("IO error: {0}: {1}")]
     IoError(PathBuf, std::io::Error),
-    #[error("Tried to check proofs but proofs are disabled")]
-    ProofsDisabled,
+    #[error("Tried to {0} but proofs are disabled")]
+    ProofsDisabled(String),
+    #[error("Lookup proof requires an expression with no arguments. Got: {0}")]
+    LookupProofRequiresExpr(String),
 }
 
 fn safe_shl(a: usize, b: usize) -> usize {

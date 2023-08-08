@@ -636,75 +636,21 @@ pub(crate) fn desugar_command(
         Command::Check(facts) => {
             let res = vec![NCommand::Check(flatten_facts(&facts, desugar))];
 
-            if get_all_proofs {
-                /*res.push(NCommand::RunSchedule(NormSchedule::Saturate(Box::new(
-                    NormSchedule::Run(NormRunConfig {
-                        ruleset: "proofrules__".into(),
-                        limit: 1,
-                        until: None,
-                    }),
-                ))));*/
-
-                // check that all the proofs in the egraph are valid
-                // TODO reenable
-                //res.push(NCommand::CheckProof);
-
-                /*let proofvar = desugar.get_fresh();
-                // declare a variable for the resulting proof
-                // TODO using constant high cost
-                res.extend(desugar.declare(proofvar, "Proof__".into()));
-
-                // make a dummy rule so that we get a proof for this check
-                let dummyrule = Rule {
-                    body: facts.clone(),
-                    head: vec![Action::Union(
-                        Expr::Var(proofvar),
-                        Expr::Var(RULE_PROOF_KEYWORD.into()),
-                    )],
-                };
-                let ruleset = desugar.get_fresh();
-                res.push(NCommand::AddRuleset(ruleset));
-                res.extend(
-                    desugar_command(
-                        Command::Rule {
-                            ruleset,
-                            name: "".into(),
-                            rule: dummyrule,
-                        },
-                        desugar,
-                        get_all_proofs,
-                        seminaive_transform,
-                    )?
-                    .into_iter()
-                    .map(|cmd| cmd.command),
-                );
-
-                // now run the dummy rule and get the proof
-                res.push(NCommand::RunSchedule(NormSchedule::Run(NormRunConfig {
-                    ruleset,
-                    limit: 1,
-                    until: None,
-                })));
-
-                // we need to run proof extraction rules again
-                res.push(NCommand::RunSchedule(NormSchedule::Saturate(Box::new(
-                    NormSchedule::Run(NormRunConfig {
-                        ruleset: "proof-extract__".into(),
-                        limit: 1,
-                        until: None,
-                    }),
-                ))));
-
-                // extract the proof
-                res.push(NCommand::Extract {
-                    variants: 0,
-                    var: proofvar,
-                });*/
-            }
-
             res
         }
         Command::CheckProof => vec![NCommand::CheckProof],
+        Command::GetProof(query) => desugar.desugar_get_proof(&query)?,
+        Command::LookupProof(expr) => match &expr {
+            Expr::Call(f, args) => {
+                if !args.is_empty() {
+                    return Err(Error::LookupProofRequiresExpr(expr.to_string()));
+                }
+                vec![NCommand::LookupProof(NormExpr::Call(*f, vec![]))]
+            }
+            _ => {
+                return Err(Error::LookupProofRequiresExpr(expr.to_string()));
+            }
+        },
         Command::PrintTable(symbol, size) => vec![NCommand::PrintTable(symbol, size)],
         Command::PrintSize(symbol) => vec![NCommand::PrintSize(symbol)],
         Command::Output { file, exprs } => vec![NCommand::Output { file, exprs }],
@@ -906,5 +852,32 @@ impl Desugar {
             unextractable: fdecl.unextractable,
         }));
         res
+    }
+
+    fn desugar_get_proof(&mut self, query: &Vec<Fact>) -> Result<Vec<NCommand>, Error> {
+        let proof_ruleset = self.fresh().as_str();
+        let result_sort = self.fresh().as_str();
+        let result_func = self.fresh().as_str();
+        let query_str = ListDisplay(query, " ");
+        desugar_commands(
+            self.parse_program(&format!(
+                "
+        (check {query_str})
+        (ruleset {proof_ruleset})
+        (sort {result_sort})
+        (function {result_func} () {result_sort})
+        (rule ({query_str})
+              (({result_func}))
+              :ruleset {proof_ruleset})
+        (run {proof_ruleset} 1)
+        (lookup-proof ({result_func}))
+        ",
+            ))
+            .unwrap(),
+            self,
+            false,
+            false,
+        )
+        .map(|cmds| cmds.into_iter().map(|cmd| cmd.command).collect())
     }
 }

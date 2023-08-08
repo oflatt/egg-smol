@@ -116,6 +116,8 @@ pub enum NCommand {
         name: Symbol,
         file: String,
     },
+    GetProof(Vec<NormFact>),
+    LookupProof(NormExpr),
 }
 
 impl NormCommand {
@@ -149,6 +151,10 @@ impl NCommand {
                 Command::Check(facts.iter().map(|fact| fact.to_fact()).collect())
             }
             NCommand::CheckProof => Command::CheckProof,
+            NCommand::GetProof(query) => {
+                Command::GetProof(query.iter().map(|fact| fact.to_fact()).collect::<Vec<_>>())
+            }
+            NCommand::LookupProof(expr) => Command::LookupProof(expr.to_expr()),
             NCommand::PrintTable(name, n) => Command::PrintTable(*name, *n),
             NCommand::PrintSize(name) => Command::PrintSize(*name),
             NCommand::Output { file, exprs } => Command::Output {
@@ -190,6 +196,10 @@ impl NCommand {
                 NCommand::Check(facts.iter().map(|fact| fact.map_exprs(f)).collect())
             }
             NCommand::CheckProof => NCommand::CheckProof,
+            NCommand::GetProof(query) => {
+                NCommand::GetProof(query.iter().map(|fact| fact.map_exprs(f)).collect())
+            }
+            NCommand::LookupProof(expr) => NCommand::LookupProof(f(expr)),
             NCommand::PrintTable(name, n) => NCommand::PrintTable(*name, *n),
             NCommand::PrintSize(name) => NCommand::PrintSize(*name),
             NCommand::Output { file, exprs } => NCommand::Output {
@@ -358,6 +368,8 @@ pub enum Command {
     // TODO: this could just become an empty query
     Check(Vec<Fact>),
     CheckProof,
+    GetProof(Vec<Fact>),
+    LookupProof(Expr),
     PrintTable(Symbol, usize),
     PrintSize(Symbol),
     Input {
@@ -398,6 +410,8 @@ impl ToSexp for Command {
             Command::Extract { variants, fact } => list!("extract", ":variants", variants, fact),
             Command::Check(facts) => list!("check", ++ facts),
             Command::CheckProof => list!("check-proof"),
+            Command::GetProof(query) => list!("get-proof", ++ query),
+            Command::LookupProof(expr) => list!("lookup-proof", expr),
             Command::Push(n) => list!("push", n),
             Command::Pop(n) => list!("pop", n),
             Command::PrintTable(name, n) => list!("print-table", name, n),

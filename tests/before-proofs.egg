@@ -33,11 +33,4 @@
 (check (= addx2
           addx20))
 
-(sort Res)
-(function Result () Res)
-(rule ((= addx2 addx20))
-      ((Result))
-      :ruleset proof)
-
-(run proof 1)
-(print (ProofOf___ (Result)))
+(get-proof (= addx2 addx20))

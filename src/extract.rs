@@ -91,7 +91,10 @@ impl<'a> Extractor<'a> {
             egraph
                 .functions
                 .keys()
-                .filter(|func| !egraph.functions.get(*func).unwrap().decl.unextractable)
+                .filter(|func| {
+                    let ftype = egraph.proof_state.type_info.func_types.get(*func).unwrap();
+                    ftype.is_datatype && !ftype.unextractable
+                })
                 .cloned(),
         );
 
