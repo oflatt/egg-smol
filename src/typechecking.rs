@@ -21,6 +21,7 @@ pub struct TypeInfo {
     pub func_types: HashMap<Symbol, FuncType>,
     pub global_types: HashMap<Symbol, ArcSort>,
     pub local_types: HashMap<CommandId, HashMap<Symbol, ArcSort>>,
+    pub rule_names: HashSet<Symbol>,
 }
 
 impl Default for TypeInfo {
@@ -34,6 +35,7 @@ impl Default for TypeInfo {
             func_types: Default::default(),
             global_types: Default::default(),
             local_types: Default::default(),
+            rule_names: Default::default(),
         };
 
         res.add_sort(UnitSort::new(UNIT_SYM.into()), true);
@@ -191,8 +193,12 @@ impl TypeInfo {
             NCommand::NormRule {
                 rule,
                 ruleset: _,
-                name: _,
+                name,
+                original: _,
             } => {
+                if self.rule_names.contains(name) {
+                    return Err(TypeError::RuleAlreadyPresent(*name));
+                }
                 self.typecheck_rule(id, rule)?;
             }
             NCommand::Sort(sort, presort_and_args) => {
@@ -730,4 +736,6 @@ pub enum TypeError {
     NoMatchingPrimitive { op: Symbol, inputs: Vec<Symbol> },
     #[error("Variable {0} was already defined")]
     AlreadyDefined(Symbol),
+    #[error("Rule {0} is already present")]
+    RuleAlreadyPresent(Symbol),
 }

@@ -137,11 +137,11 @@ impl ProofState {
         }
     }
 
-    fn original_name(&self) -> String {
+    pub(crate) fn original_name(&self) -> String {
         format!("Original{}", "_".repeat(self.desugar.number_underscores))
     }
 
-    fn rule_proof_constructor(&self) -> String {
+    pub(crate) fn rule_proof_constructor(&self) -> String {
         format!("RuleProof{}", "_".repeat(self.desugar.number_underscores))
     }
 
@@ -204,14 +204,21 @@ impl ProofState {
         }
     }
 
+    pub(crate) fn proof_null_constructor(&self) -> String {
+        format!("ProofNull{}", "_".repeat(self.desugar.number_underscores))
+    }
+
     fn proof_null(&self) -> String {
-        let underscores = "_".repeat(self.desugar.number_underscores);
-        format!("(ProofNull{})", underscores)
+        format!("({})", self.proof_null_constructor())
+    }
+
+    pub(crate) fn proof_cons_constructor(&self) -> String {
+        format!("ProofCons{}", "_".repeat(self.desugar.number_underscores))
     }
 
     fn proof_cons(&self, head: String, tail: String) -> String {
-        let underscores = "_".repeat(self.desugar.number_underscores);
-        format!("(ProofCons{} {} {})", underscores, head, tail)
+        let cons = self.proof_cons_constructor();
+        format!("({cons} {head} {tail})")
     }
 
     fn rule_proof(&self, rule: &NormRule) -> String {
@@ -351,6 +358,7 @@ impl ProofState {
                 name,
                 rule,
                 ruleset,
+                original,
             } => {
                 vec![Command::Rule {
                     name: *name,
@@ -359,6 +367,7 @@ impl ProofState {
                         body: rule.body.iter().map(|e| e.to_fact()).collect(),
                         head: self.rule_add_proofs(rule, *name),
                     },
+                    original: original.clone(),
                 }]
             }
             NCommand::GetProof(..) => panic!("GetProof should have been desugared"),

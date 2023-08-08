@@ -27,22 +27,18 @@ fn desugar_rewrite(
     desugar: &mut Desugar,
 ) -> Vec<NCommand> {
     let var = Symbol::from("rewrite_var__");
-    // make two rules- one to insert the rhs, and one to union
-    // this way, the union rule can only be fired once,
-    // which helps proofs not add too much info
+    let rule = Rule {
+        body: [Fact::Eq(vec![Expr::Var(var), rewrite.lhs.clone()])]
+            .into_iter()
+            .chain(rewrite.conditions.clone())
+            .collect(),
+        head: vec![Action::Union(Expr::Var(var), rewrite.rhs.clone())],
+    };
     vec![NCommand::NormRule {
         ruleset,
         name,
-        rule: flatten_rule(
-            Rule {
-                body: [Fact::Eq(vec![Expr::Var(var), rewrite.lhs.clone()])]
-                    .into_iter()
-                    .chain(rewrite.conditions.clone())
-                    .collect(),
-                head: vec![Action::Union(Expr::Var(var), rewrite.rhs.clone())],
-            },
-            desugar,
-        ),
+        rule: flatten_rule(rule.clone(), desugar),
+        original: rule.clone(),
     }]
 }
 
@@ -567,6 +563,7 @@ pub(crate) fn desugar_command(
             ruleset,
             mut name,
             rule,
+            original,
         } => {
             if name == "".into() {
                 name = rule.to_string().replace('\"', "'").into();
@@ -577,6 +574,7 @@ pub(crate) fn desugar_command(
                 ruleset,
                 name,
                 rule: flatten_rule(rule.clone(), desugar),
+                original: original.clone(),
             }];
 
             if seminaive_transform && !proof_instrumented {
@@ -585,6 +583,7 @@ pub(crate) fn desugar_command(
                         ruleset,
                         name,
                         rule: flatten_rule(new_rule, desugar),
+                        original: original.clone(),
                     });
                 }
             }

@@ -204,7 +204,8 @@ pub struct EGraph {
     unionfind: UnionFind,
     pub(crate) proof_state: ProofState,
     functions: HashMap<Symbol, Function>,
-    rulesets: HashMap<Symbol, HashMap<Symbol, Rule>>,
+    rulesets: HashMap<Symbol, HashMap<Symbol, CompiledRule>>,
+    rule_to_ruleset: HashMap<Symbol, Symbol>,
     ruleset_iteration: HashMap<Symbol, usize>,
     proofs_enabled: bool,
     interactive_mode: bool,
@@ -220,7 +221,9 @@ pub struct EGraph {
 }
 
 #[derive(Clone, Debug)]
-struct Rule {
+struct CompiledRule {
+    original: Rule,
+    desugared: NormRule,
     query: CompiledQuery,
     program: Program,
     matches: usize,
@@ -238,6 +241,7 @@ impl Default for EGraph {
             unionfind: Default::default(),
             functions: Default::default(),
             rulesets: Default::default(),
+            rule_to_ruleset: Default::default(),
             ruleset_iteration: Default::default(),
             proof_state: ProofState::default(),
             global_bindings: Default::default(),
@@ -553,7 +557,7 @@ impl EGraph {
         if !self.rulesets.contains_key(&ruleset) {
             panic!("run: No ruleset named '{ruleset}'");
         }
-        let mut rules: HashMap<Symbol, Rule> =
+        let mut rules: HashMap<Symbol, CompiledRule> =
             std::mem::take(self.rulesets.get_mut(&ruleset).unwrap());
         let iteration = *self.ruleset_iteration.entry(ruleset).or_default();
         self.ruleset_iteration.insert(ruleset, iteration + 1);
@@ -637,6 +641,12 @@ impl EGraph {
         Ok(report)
     }
 
+    fn get_rule_from_rule_name(&self, name: Symbol) -> &CompiledRule {
+        let ruleset = self.rule_to_ruleset.get(&name).unwrap();
+        let rules = self.rulesets.get(ruleset).unwrap();
+        rules.get(&name).unwrap()
+    }
+
     fn did_change(&self) -> bool {
         for (_name, function) in &self.functions {
             if function.nodes.max_ts() >= self.timestamp {
@@ -647,16 +657,18 @@ impl EGraph {
         false
     }
 
-    fn add_rule_with_name(
-        &mut self,
-        name: String,
-        rule: ast::Rule,
-        ruleset: Symbol,
-    ) -> Result<Symbol, Error> {
+    pub fn add_rule(&mut self, cmd: NCommand) -> Result<Symbol, Error> {
+        let NCommand::NormRule{rule, name, original, ruleset} = cmd 
+        else {
+            panic!("add_rule expects a NCommand::NormRule")
+        };
         let name = Symbol::from(name);
         let mut ctx = typecheck::Context::new(self);
+        // TODO when we re-write the backend, we won't convert back to Fact and Action
+        let facts = rule.body.iter().map(|f| f.to_fact()).collect::<Vec<Fact>>();
+        let actions = rule.head.iter().map(|h| h.to_action()).collect::<Vec<Action>>();
         let (query0, action0) = ctx
-            .typecheck_query(&rule.body, &rule.head)
+            .typecheck_query(&facts, &actions)
             .map_err(Error::TypeErrors)?;
         let query = self.compile_gj_query(query0, &ctx.types);
         let program = self
@@ -666,7 +678,9 @@ impl EGraph {
         //     "Compiled rule {rule:?}\n{subst:?}to {program:#?}",
         //     subst = &ctx.types
         // );
-        let compiled_rule = Rule {
+        let compiled_rule = CompiledRule {
+            original,
+            desugared: rule,
             query,
             matches: 0,
             times_banned: 0,
@@ -684,12 +698,8 @@ impl EGraph {
         } else {
             panic!("No such ruleset {ruleset}");
         }
+        assert!(self.rule_to_ruleset.insert(name, ruleset).is_none());
         Ok(name)
-    }
-
-    pub fn add_rule(&mut self, rule: ast::Rule, ruleset: Symbol) -> Result<Symbol, Error> {
-        let name = format!("{}", rule);
-        self.add_rule_with_name(name, rule, ruleset)
     }
 
     pub fn eval_actions(&mut self, actions: &[Action]) -> Result<(), Error> {
@@ -800,12 +810,8 @@ impl EGraph {
                 self.add_ruleset(name);
                 format!("Declared ruleset {name}.")
             }
-            NCommand::NormRule {
-                ruleset,
-                rule,
-                name,
-            } => {
-                self.add_rule(rule.to_rule(), ruleset)?;
+            NCommand::NormRule { name, .. } => {
+                self.add_rule(command)?;
                 format!("Declared rule {name}.")
             }
             NCommand::RunSchedule(sched) => {
