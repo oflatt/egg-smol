@@ -31,7 +31,7 @@ impl<'a> ProofChecker<'a> {
                 } else if op.as_str() == self.egraph.proof_state.rule_proof_constructor() {
                     assert!(children.len() == 3);
                     self.check_rule_proof(
-                        self.termdag.to_string(&self.termdag.get(children[0])),
+                        self.string_from_term(self.termdag.get(children[0])),
                         self.unpack_proof_list(self.termdag.get(children[1])),
                         self.termdag.get(children[2]),
                     );
@@ -44,6 +44,14 @@ impl<'a> ProofChecker<'a> {
         }
 
         self.proven.insert(proof);
+    }
+
+    fn string_from_term(&self, term: Term) -> String {
+        let with_quotes = self.termdag.to_string(&term);
+        assert!(with_quotes.len() >= 2);
+        assert!(with_quotes.starts_with('"'));
+        assert!(with_quotes.ends_with('"'));
+        with_quotes[1..with_quotes.len() - 1].to_string()
     }
 
     pub(crate) fn unpack_proof_list(&self, proof_list: Term) -> Vec<Term> {
@@ -64,9 +72,9 @@ impl<'a> ProofChecker<'a> {
     }
 
     pub(crate) fn check_rule_proof(&self, name: String, proof_list: Vec<Term>, _to_prove: Term) {
-        let rule = self.egraph.get_rule_from_rule_name(name.into());
+        /*let rule = self.egraph.get_rule_from_rule_name(name.into());
         let current_atom = 0;
-        let mut bindings = HashMap::<Symbol, Term>::default();
+        let mut bindings = HashMap::<Symbol, Term>::default();*/
 
         // TODO check that the to_prove
         // actually appears in the body with the given bindings

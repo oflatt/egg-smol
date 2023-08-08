@@ -51,6 +51,9 @@ impl Run {
         if self.test_proofs {
             egraph.test_proofs = true;
         }
+        if self.resugar {
+            egraph.seminaive = false;
+        }
         egraph.set_underscores_for_desugaring(5);
         match egraph.parse_and_run_program(program) {
             Ok(msgs) => {

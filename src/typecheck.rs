@@ -627,8 +627,7 @@ trait ExprChecker<'a> {
 
                     let t = self.do_function(*sym, ts);
                     Ok((t, functype.output.clone()))
-                } else if let Some(prims) = self.egraph().proof_state.type_info.primitives.get(sym)
-                {
+                } else {
                     let mut ts = Vec::with_capacity(args.len());
                     let mut tys = Vec::with_capacity(args.len());
                     for arg in args {
@@ -636,20 +635,17 @@ trait ExprChecker<'a> {
                         ts.push(t);
                         tys.push(ty);
                     }
-
-                    for prim in prims {
-                        if let Some(output_type) = prim.accept(&tys) {
-                            let t = self.do_prim(prim.clone(), ts);
-                            return Ok((t, output_type));
-                        }
+                    if let Some((prim, return_type)) = self
+                        .egraph()
+                        .proof_state
+                        .type_info
+                        .lookup_primitive(*sym, &tys)
+                    {
+                        let t = self.do_prim(prim, ts);
+                        Ok((t, return_type))
+                    } else {
+                        panic!("Unbound function {}", sym);
                     }
-
-                    Err(TypeError::NoMatchingPrimitive {
-                        op: *sym,
-                        inputs: tys.into_iter().map(|t| t.name()).collect(),
-                    })
-                } else {
-                    panic!("Unbound function {}", sym);
                 }
             }
         }

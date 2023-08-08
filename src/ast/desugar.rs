@@ -568,7 +568,6 @@ pub(crate) fn desugar_command(
             if name == "".into() {
                 name = rule.to_string().replace('\"', "'").into();
             }
-            let proof_instrumented = rule.is_proof_instrumented();
 
             let mut result = vec![NCommand::NormRule {
                 ruleset,
@@ -577,13 +576,14 @@ pub(crate) fn desugar_command(
                 original: original.clone(),
             }];
 
-            if seminaive_transform && !proof_instrumented {
+            if seminaive_transform {
+                let seminaive_name = format!("{}___seminaive", name);
                 if let Some(new_rule) = add_semi_naive_rule(desugar, rule) {
                     result.push(NCommand::NormRule {
                         ruleset,
-                        name,
+                        name: seminaive_name.into(),
                         rule: flatten_rule(new_rule, desugar),
-                        original: original.clone(),
+                        original,
                     });
                 }
             }

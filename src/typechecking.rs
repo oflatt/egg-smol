@@ -91,12 +91,14 @@ impl TypeInfo {
         if self.prim_sorts.contains_key(&name) || self.sorts.contains_key(&name) {
             return Err(TypeError::SortAlreadyBound(name));
         }
+
         if is_primitive {
             self.prim_sorts.insert(name, sort.clone());
-            sort.register_primitives(self);
         } else {
-            self.sorts.insert(name, sort);
+            self.sorts.insert(name, sort.clone());
         }
+        sort.register_primitives(self);
+
         Ok(())
     }
 
@@ -608,6 +610,21 @@ impl TypeInfo {
         self.prim_sorts.contains_key(&sym)
     }
 
+    pub(crate) fn lookup_primitive(
+        &self,
+        sym: Symbol,
+        input_types: &[ArcSort],
+    ) -> Option<(Primitive, ArcSort)> {
+        if let Some(prims) = self.primitives.get(&sym) {
+            for prim in prims {
+                if let Some(return_type) = prim.accept(input_types) {
+                    return Some((prim.clone(), return_type));
+                }
+            }
+        }
+        None
+    }
+
     fn lookup_func(&self, sym: Symbol, input_types: Vec<ArcSort>) -> Result<FuncType, TypeError> {
         if let Some(found) = self.func_types.get(&sym) {
             if found.input.len() != input_types.len() {
@@ -623,19 +640,15 @@ impl TypeInfo {
             }
             Ok(found.clone())
         } else {
-            if let Some(prims) = self.primitives.get(&sym) {
-                for prim in prims {
-                    if let Some(return_type) = prim.accept(&input_types) {
-                        return Ok(FuncType {
-                            input: input_types,
-                            output: return_type,
-                            is_datatype: false,
-                            has_default: true,
-                            is_primitive: true,
-                            unextractable: true,
-                        });
-                    }
-                }
+            if let Some((_prim, return_type)) = self.lookup_primitive(sym, &input_types) {
+                return Ok(FuncType {
+                    input: input_types,
+                    output: return_type,
+                    is_datatype: false,
+                    has_default: true,
+                    is_primitive: true,
+                    unextractable: true,
+                });
             }
             Err(TypeError::NoMatchingPrimitive {
                 op: sym,

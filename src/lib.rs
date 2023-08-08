@@ -662,7 +662,6 @@ impl EGraph {
         else {
             panic!("add_rule expects a NCommand::NormRule")
         };
-        let name = Symbol::from(name);
         let mut ctx = typecheck::Context::new(self);
         // TODO when we re-write the backend, we won't convert back to Fact and Action
         let facts = rule.body.iter().map(|f| f.to_fact()).collect::<Vec<Fact>>();
