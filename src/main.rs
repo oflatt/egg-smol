@@ -15,6 +15,8 @@ struct Args {
     resugar: bool,
     #[clap(long)]
     proofs: bool,
+    #[clap(long)]
+    test_proofs: bool,
     #[clap(long, default_value_t = CompilerPassStop::All)]
     stop: CompilerPassStop,
     // TODO remove this evil hack
@@ -40,10 +42,13 @@ fn main() {
         egraph.set_underscores_for_desugaring(args.num_underscores);
         egraph.fact_directory = args.fact_directory.clone();
         egraph.seminaive = !args.naive;
-        if args.proofs {
+        if args.proofs || args.test_proofs {
             egraph
                 .parse_and_run_program("(set-option enable_proofs 1)")
                 .unwrap();
+            if args.test_proofs {
+                egraph.test_proofs = true;
+            }
         }
         egraph
     };

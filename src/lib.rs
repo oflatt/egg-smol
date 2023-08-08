@@ -215,6 +215,7 @@ pub struct EGraph {
     pub node_limit: usize,
     pub fact_directory: Option<PathBuf>,
     pub seminaive: bool,
+    pub seminaive_transformation: bool,
     pub global_bindings: HashMap<Symbol, (ArcSort, Value)>,
     extract_report: Option<ExtractReport>,
     run_report: Option<RunReport>,
@@ -253,6 +254,7 @@ impl Default for EGraph {
             test_proofs: false,
             fact_directory: None,
             seminaive: true,
+            seminaive_transformation: true,
             extract_report: None,
             run_report: None,
         };
@@ -1075,7 +1077,7 @@ impl EGraph {
         let mut program = self.proof_state.desugar.desugar_program(
             vec![command],
             self.test_proofs,
-            self.seminaive,
+            self.seminaive && self.seminaive_transformation,
         )?;
         if stop == CompilerPassStop::Desugar {
             return Ok(program);

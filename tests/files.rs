@@ -52,7 +52,7 @@ impl Run {
             egraph.test_proofs = true;
         }
         if self.resugar {
-            egraph.seminaive = false;
+            egraph.seminaive_transformation = false;
         }
         egraph.set_underscores_for_desugaring(5);
         match egraph.parse_and_run_program(program) {

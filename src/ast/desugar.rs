@@ -38,7 +38,7 @@ fn desugar_rewrite(
         ruleset,
         name,
         rule: flatten_rule(rule.clone(), desugar),
-        original: rule.clone(),
+        original: rule,
     }]
 }
 
@@ -600,7 +600,11 @@ pub(crate) fn desugar_command(
         Command::Simplify { expr, schedule } => desugar_simplify(desugar, &expr, &schedule),
         Command::Calc(idents, exprs) => desugar_calc(desugar, idents, exprs, seminaive_transform)?,
         Command::RunSchedule(sched) => {
-            vec![NCommand::RunSchedule(desugar_schedule(desugar, &sched))]
+            let mut res = vec![NCommand::RunSchedule(desugar_schedule(desugar, &sched))];
+            if get_all_proofs {
+                res.push(NCommand::CheckProof);
+            }
+            res
         }
         // TODO add variants to extract action
         Command::Extract {
@@ -633,12 +637,7 @@ pub(crate) fn desugar_command(
                 .collect()
         }
         Command::Check(facts) => {
-            let mut res = vec![NCommand::Check(flatten_facts(&facts, desugar))];
-            if get_all_proofs {
-                res.push(NCommand::CheckProof);
-            }
-
-            res
+            vec![NCommand::Check(flatten_facts(&facts, desugar))]
         }
         Command::CheckProof => vec![NCommand::CheckProof],
         Command::GetProof(query) => desugar.desugar_get_proof(&query)?,
