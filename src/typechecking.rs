@@ -166,7 +166,6 @@ impl TypeInfo {
     }
 
     fn typecheck_ncommand(&mut self, command: &NCommand, id: CommandId) -> Result<(), TypeError> {
-        eprintln!("typechecking: {:?}", command);
         match command {
             NCommand::Function(fdecl) => {
                 if self.is_primitive_sort(fdecl.name) {

@@ -634,7 +634,10 @@ pub(crate) fn desugar_command(
                 .collect()
         }
         Command::Check(facts) => {
-            let res = vec![NCommand::Check(flatten_facts(&facts, desugar))];
+            let mut res = vec![NCommand::Check(flatten_facts(&facts, desugar))];
+            if get_all_proofs {
+                res.push(NCommand::CheckProof);
+            }
 
             res
         }
