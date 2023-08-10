@@ -1,8 +1,0 @@
-;; There are two types of proofs:
-;; 1) Provenance proofs justify the existance of a term 
-;; 2) Equality proofs prove two terms are equal 
-;; Equality proofs `a = b` also double as
-;; provenance proofs `a` and `b`
-;; When a proof `a = b` is used as a provenance proof, it is a proof of `b`
-
-(function ^T_ (^) ProofTerm_)

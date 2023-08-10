@@ -25,6 +25,7 @@ impl<'a> ProofChecker<'a> {
         }
         let proof_term = match &proof {
             Term::App(op, children) => {
+                // if this is an original proof
                 if op.as_str() == self.egraph.proof_state.original_name() {
                     /*
                     TODO check this was an original term in the egraph
@@ -76,6 +77,59 @@ impl<'a> ProofChecker<'a> {
         })
     }
 
+    // returns the function name, inputs, and output
+    fn get_term_parts(&self, term: Term) -> (Symbol, Vec<Term>, Term) {
+        let Term::App(term_wrapper, args) = term.clone() else {
+                panic!("Proof term expected. Got: {:?}", term)
+            };
+        assert!(term_wrapper
+            .as_str()
+            .contains(&self.egraph.proof_state.term_func_ending()));
+        let stripped = term_wrapper
+            .as_str()
+            .strip_suffix(&self.egraph.proof_state.term_func_ending())
+            .unwrap();
+        let func_type = self
+            .egraph
+            .proof_state
+            .type_info
+            .func_types
+            .get::<Symbol>(&stripped.into())
+            .unwrap_or_else(|| panic!("No function type for {}", stripped));
+        let (inputs, output) = if func_type.is_datatype {
+            // unwrap datatypes twice
+            assert!(args.len() == 1);
+            let unwrapped = self.termdag.get(args[0]);
+            let Term::App(data_head, args) = unwrapped.clone() else {
+                    panic!("Expected a datatype wrapper. Got: {}", self.termdag.to_string(&unwrapped))
+                };
+            assert!(data_head.as_str() == stripped);
+            (
+                args.iter().map(|child| self.termdag.get(*child)).collect(),
+                unwrapped,
+            )
+
+            // output is the term itself
+        } else {
+            assert!(args.len() == func_type.input.len() + 1);
+            (
+                args[..args.len() - 1]
+                    .iter()
+                    .map(|t| self.termdag.get(*t))
+                    .collect(),
+                self.termdag.get(*args.last().unwrap()),
+            )
+        };
+
+        assert_eq!(
+            args.len(),
+            1,
+            "Proof terms should be wrapped in a single argument. Got: {}",
+            self.termdag.to_string(&term)
+        );
+        (stripped.into(), inputs, output)
+    }
+
     pub(crate) fn check_rule_proof(
         &mut self,
         name: String,
@@ -107,27 +161,23 @@ impl<'a> ProofChecker<'a> {
                 let current_term = term_list[current_atom].clone();
                 match fact {
                     NormFact::Assign(lhs, NormExpr::Call(op, body)) => {
-                        let Term::App(term_op, targs) = current_term.clone() else {
-                            panic!("Expected a call in the proof");
-                        };
+                        let (name, inputs, output) = self.get_term_parts(current_term.clone());
                         assert_eq!(
                             *op,
-                            top,
+                            name,
                             "Expected operators to match: {} != {}",
                             &NormExpr::Call(*op, body.clone()),
                             self.termdag.to_string(&current_term)
                         );
-                        assert_eq!(body.len(), targs.len());
-                        for (arg, targ) in
-                            body.iter().zip(targs.iter().map(|t| self.termdag.get(*t)))
-                        {
+                        assert_eq!(body.len(), inputs.len());
+                        for (arg, targ) in body.iter().zip(inputs) {
                             if let Some(existing) = bindings.insert(*arg, targ.clone()) {
                                 assert_eq!(existing, targ);
                             }
                         }
 
-                        if let Some(existing) = bindings.insert(*lhs, current_term.clone()) {
-                            assert_eq!(existing, current_term);
+                        if let Some(existing) = bindings.insert(*lhs, output.clone()) {
+                            assert_eq!(existing, output);
                         }
 
                         current_atom += 1;

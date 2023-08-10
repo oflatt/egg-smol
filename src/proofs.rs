@@ -21,13 +21,6 @@ impl ProofState {
         self.parse_program(&replaced).unwrap()
     }
 
-    fn make_proof_type(&self, sort: &Symbol) -> String {
-        let underscores = "_".repeat(self.desugar.number_underscores);
-        let proof_header = include_str!("prooftype.egg");
-        let replaced = proof_header.replace('_', &underscores);
-        replaced.replace('^', &sort.to_string())
-    }
-
     fn get_proof_term_type(&self) -> Symbol {
         format!("ProofTerm{}", "_".repeat(self.desugar.number_underscores)).into()
     }
@@ -36,27 +29,30 @@ impl ProofState {
         format!("ProofOf{}", "_".repeat(self.desugar.number_underscores)).into()
     }
 
+    pub fn term_func_ending(&self) -> String {
+        format!("T{}", "_".repeat(self.desugar.number_underscores))
+    }
+
     fn term_func_name(&self, name: Symbol) -> Symbol {
-        format!("{}T{}", name, "_".repeat(self.desugar.number_underscores)).into()
+        format!("{}{}", name, self.term_func_ending()).into()
     }
 
     // Make a term type for this function
     // which can be put in proofs
-    // For tables with merge functions, we need all
-    // the inputs.
-    // For other terms, just use built-in terms
     fn make_term_table(&self, fdecl: &NormFunctionDecl) -> Vec<Command> {
         let types = self.type_info.func_types.get(&fdecl.name).unwrap();
-        if types.is_datatype {
-            return vec![];
-        }
-        let input = fdecl
-            .schema
-            .input
-            .iter()
-            .cloned()
-            .chain(once(fdecl.schema.output))
-            .collect();
+        let input = if types.is_datatype {
+            // datatypes are already terms, just wrap
+            vec![fdecl.schema.output.clone()]
+        } else {
+            fdecl
+                .schema
+                .input
+                .iter()
+                .cloned()
+                .chain(once(fdecl.schema.output))
+                .collect()
+        };
 
         vec![Command::Function(FunctionDecl {
             name: self.term_func_name(fdecl.name),
@@ -132,7 +128,7 @@ impl ProofState {
                 "Non-merge terms should not have results. Got: {}",
                 expr
             );
-            let term_name = self.term_func_name(expr_type.output.name());
+            let term_name = self.term_func_name(*head);
             format!("({term_name} {expr})")
         }
     }
@@ -346,10 +342,7 @@ impl ProofState {
                 self.make_term_table(fdecl),
                 vec![Command::Function(self.instrument_fdecl(fdecl))],
             ),
-            NCommand::Sort(sort, _pre) => vec_append(
-                vec![command.to_command()],
-                self.parse_program(&self.make_proof_type(sort)).unwrap(),
-            ),
+            NCommand::Sort(_sort, _pre) => vec![command.to_command()],
             NCommand::NormAction(action) => vec_append(
                 self.add_proofs_action_original(action),
                 vec![command.to_command()],
