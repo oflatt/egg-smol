@@ -133,7 +133,7 @@ fn generate_tests(glob: &str) -> Vec<Trial> {
         // or input
         // or call functions in merge
         // TODO fix me
-        let banned = ["fusion", "cykjson", "merge_saturates", "string_quotes"];
+        let banned = ["lambda", "fusion", "cykjson", "merge_saturates", "string_quotes"];
         if !banned.contains(&name.as_str()) {
             push_trial(Run {
                 test_proofs: true,

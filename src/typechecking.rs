@@ -196,7 +196,6 @@ impl TypeInfo {
                 rule,
                 ruleset: _,
                 name,
-                original: _,
             } => {
                 if self.rule_names.contains(name) {
                     return Err(TypeError::RuleAlreadyPresent(*name));

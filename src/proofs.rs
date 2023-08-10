@@ -308,7 +308,7 @@ impl ProofState {
         );
         let rule_prf_constructor = self.rule_proof_constructor();
 
-        let rule_name = format!("\"{name}-merge-fn\"");
+        let rule_name = format!("\"{name}-merge-fn__\"");
         let rule_name_var = self.fresh().as_str();
         let rule_prf = self.proof_cons(old_prf, self.proof_cons(new_expr, self.proof_null()));
         let rule_prf_name = self.fresh().as_str();
@@ -358,7 +358,6 @@ impl ProofState {
                 name,
                 rule,
                 ruleset,
-                original,
             } => {
                 vec![Command::Rule {
                     name: *name,
@@ -367,7 +366,6 @@ impl ProofState {
                         body: rule.body.iter().map(|e| e.to_fact()).collect(),
                         head: self.rule_add_proofs(rule, *name),
                     },
-                    original: original.clone(),
                 }]
             }
             NCommand::GetProof(..) => panic!("GetProof should have been desugared"),

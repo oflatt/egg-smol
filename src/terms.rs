@@ -258,21 +258,15 @@ impl ProofState {
             .collect()
     }
 
-    fn instrument_rule(
-        &mut self,
-        ruleset: Symbol,
-        name: Symbol,
-        rule: &NormRule,
-        original: Rule,
-    ) -> Vec<Command> {
+    fn instrument_rule(&mut self, ruleset: Symbol, name: Symbol, rule: &NormRule) -> Vec<Command> {
+        let rule = Rule {
+            head: self.instrument_actions(&rule.head),
+            body: self.instrument_facts(&rule.body),
+        };
         vec![Command::Rule {
             ruleset,
             name,
-            rule: Rule {
-                head: self.instrument_actions(&rule.head),
-                body: self.instrument_facts(&rule.body),
-            },
-            original,
+            rule,
         }]
     }
 
@@ -339,9 +333,8 @@ impl ProofState {
                     ruleset,
                     name,
                     rule,
-                    original,
                 } => {
-                    res.extend(self.instrument_rule(*ruleset, *name, rule, original.clone()));
+                    res.extend(self.instrument_rule(*ruleset, *name, rule));
                 }
                 NCommand::NormAction(action) => {
                     res.extend(

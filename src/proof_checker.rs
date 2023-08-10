@@ -2,7 +2,8 @@ use crate::*;
 
 pub(crate) struct ProofChecker<'a> {
     termdag: TermDag,
-    proven: HashSet<Term>,
+    // A map from a proof to the term in proves
+    proven: HashMap<Term, Term>,
     egraph: &'a EGraph,
 }
 
@@ -11,23 +12,25 @@ impl<'a> ProofChecker<'a> {
         let mut checker = Self {
             termdag,
             egraph,
-            proven: HashSet::default(),
+            proven: HashMap::default(),
         };
         for proof in proofs_to_check {
             checker.check_proof(proof);
         }
     }
 
-    pub(crate) fn check_proof(&mut self, proof: Term) {
-        if self.proven.contains(&proof) {
-            return;
+    pub(crate) fn check_proof(&mut self, proof: Term) -> Term {
+        if let Some(existing) = self.proven.get(&proof) {
+            return existing.clone();
         }
-        match &proof {
+        let proof_term = match &proof {
             Term::App(op, children) => {
                 if op.as_str() == self.egraph.proof_state.original_name() {
                     /*
                     TODO check this was an original term in the egraph
                     */
+                    assert!(children.len() == 1);
+                    self.termdag.get(children[0])
                 } else if op.as_str() == self.egraph.proof_state.rule_proof_constructor() {
                     assert!(children.len() == 3);
                     self.check_rule_proof(
@@ -35,15 +38,17 @@ impl<'a> ProofChecker<'a> {
                         self.unpack_proof_list(self.termdag.get(children[1])),
                         self.termdag.get(children[2]),
                     );
+                    self.termdag.get(children[2])
                     // TODO check the rule proof
                 } else {
                     panic!("Unrecognized proof type: {}", op);
                 }
             }
             _ => panic!("Proofs must be applications"),
-        }
+        };
 
-        self.proven.insert(proof);
+        self.proven.insert(proof, proof_term.clone());
+        proof_term
     }
 
     fn string_from_term(&self, term: Term) -> String {
@@ -71,12 +76,70 @@ impl<'a> ProofChecker<'a> {
         })
     }
 
-    pub(crate) fn check_rule_proof(&self, name: String, proof_list: Vec<Term>, _to_prove: Term) {
-        /*let rule = self.egraph.get_rule_from_rule_name(name.into());
-        let current_atom = 0;
-        let mut bindings = HashMap::<Symbol, Term>::default();*/
+    pub(crate) fn check_rule_proof(
+        &mut self,
+        name: String,
+        proof_list: Vec<Term>,
+        _to_prove: Term,
+    ) {
+        // first check proofs in proof list
+        let mut term_list = vec![];
 
-        // TODO check that the to_prove
-        // actually appears in the body with the given bindings
+        for proof in proof_list {
+            term_list.push(self.check_proof(proof));
+        }
+
+        if name.contains("-merge-fn__") {
+            // TODO check merge function proofs
+        } else {
+            let rule = self.egraph.get_term_encoded(name.into());
+            let mut current_atom = 0;
+            let mut bindings = HashMap::<Symbol, Term>::default();
+
+            let num_atoms = rule
+                .body
+                .iter()
+                .filter(|fact| matches!(fact, NormFact::Assign(..)))
+                .count();
+            assert_eq!(num_atoms, term_list.len());
+
+            for fact in &rule.body {
+                let current_term = term_list[current_atom].clone();
+                match fact {
+                    NormFact::Assign(lhs, NormExpr::Call(op, body)) => {
+                        let Term::App(term_op, targs) = current_term.clone() else {
+                            panic!("Expected a call in the proof");
+                        };
+                        assert_eq!(
+                            *op,
+                            top,
+                            "Expected operators to match: {} != {}",
+                            &NormExpr::Call(*op, body.clone()),
+                            self.termdag.to_string(&current_term)
+                        );
+                        assert_eq!(body.len(), targs.len());
+                        for (arg, targ) in
+                            body.iter().zip(targs.iter().map(|t| self.termdag.get(*t)))
+                        {
+                            if let Some(existing) = bindings.insert(*arg, targ.clone()) {
+                                assert_eq!(existing, targ);
+                            }
+                        }
+
+                        if let Some(existing) = bindings.insert(*lhs, current_term.clone()) {
+                            assert_eq!(existing, current_term);
+                        }
+
+                        current_atom += 1;
+                    }
+                    _ => {
+                        // TODO
+                    }
+                }
+            }
+
+            // TODO check that the to_prove
+            // actually appears in the body with the given bindings
+        }
     }
 }

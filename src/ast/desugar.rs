@@ -38,7 +38,6 @@ fn desugar_rewrite(
         ruleset,
         name,
         rule: flatten_rule(rule.clone(), desugar),
-        original: rule,
     }]
 }
 
@@ -563,7 +562,6 @@ pub(crate) fn desugar_command(
             ruleset,
             mut name,
             rule,
-            original,
         } => {
             if name == "".into() {
                 name = rule.to_string().replace('\"', "'").into();
@@ -573,7 +571,6 @@ pub(crate) fn desugar_command(
                 ruleset,
                 name,
                 rule: flatten_rule(rule.clone(), desugar),
-                original: original.clone(),
             }];
 
             if seminaive_transform {
@@ -583,7 +580,6 @@ pub(crate) fn desugar_command(
                         ruleset,
                         name: seminaive_name.into(),
                         rule: flatten_rule(new_rule, desugar),
-                        original,
                     });
                 }
             }

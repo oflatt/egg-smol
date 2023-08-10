@@ -205,6 +205,7 @@ pub struct EGraph {
     pub(crate) proof_state: ProofState,
     functions: HashMap<Symbol, Function>,
     rulesets: HashMap<Symbol, HashMap<Symbol, CompiledRule>>,
+    term_encoded_rules: HashMap<Symbol, NormRule>,
     rule_to_ruleset: HashMap<Symbol, Symbol>,
     ruleset_iteration: HashMap<Symbol, usize>,
     proofs_enabled: bool,
@@ -223,7 +224,6 @@ pub struct EGraph {
 
 #[derive(Clone, Debug)]
 struct CompiledRule {
-    original: Rule,
     desugared: NormRule,
     query: CompiledQuery,
     program: Program,
@@ -243,6 +243,7 @@ impl Default for EGraph {
             functions: Default::default(),
             rulesets: Default::default(),
             rule_to_ruleset: Default::default(),
+            term_encoded_rules: Default::default(),
             ruleset_iteration: Default::default(),
             proof_state: ProofState::default(),
             global_bindings: Default::default(),
@@ -649,6 +650,10 @@ impl EGraph {
         rules.get(&name).unwrap()
     }
 
+    fn get_term_encoded(&self, name: Symbol) -> &NormRule {
+        self.term_encoded_rules.get(&name).unwrap_or_else(|| panic!("get_term_encoded: no rule named '{name}'"))
+    }
+
     fn did_change(&self) -> bool {
         for (_name, function) in &self.functions {
             if function.nodes.max_ts() >= self.timestamp {
@@ -660,7 +665,7 @@ impl EGraph {
     }
 
     pub fn add_rule(&mut self, cmd: NCommand) -> Result<Symbol, Error> {
-        let NCommand::NormRule{rule, name, original, ruleset} = cmd 
+        let NCommand::NormRule{rule, name, ruleset} = cmd 
         else {
             panic!("add_rule expects a NCommand::NormRule")
         };
@@ -680,7 +685,6 @@ impl EGraph {
         //     subst = &ctx.types
         // );
         let compiled_rule = CompiledRule {
-            original,
             desugared: rule,
             query,
             matches: 0,
@@ -1095,6 +1099,14 @@ impl EGraph {
             .proof_state
             .desugar
             .desugar_program(program_terms, false, false)?;
+
+        // add the term encoded rules to the egraph
+        for command in &program {
+            if let NormCommand { command: NCommand::NormRule{ name, ruleset: _, rule }, metadata: _} = command {
+                self.term_encoded_rules.insert(name.clone(), rule.clone());
+            }
+        }
+
         if stop == CompilerPassStop::TermEncoding {
             return Ok(program);
         }

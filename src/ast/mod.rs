@@ -71,12 +71,10 @@ impl NormCommand {
                 name,
                 ruleset,
                 rule,
-                original,
             } => Command::Rule {
                 name: *name,
                 ruleset: *ruleset,
                 rule: rule.resugar(),
-                original: original.clone(),
             },
             NCommand::Check(facts) => {
                 Command::Check(NormRule::resugar_facts(facts, &mut Default::default()))
@@ -99,7 +97,6 @@ pub enum NCommand {
         name: Symbol,
         ruleset: Symbol,
         rule: NormRule,
-        original: Rule,
     },
     NormAction(NormAction),
     RunSchedule(NormSchedule),
@@ -143,12 +140,10 @@ impl NCommand {
                 name,
                 ruleset,
                 rule,
-                original,
             } => Command::Rule {
                 name: *name,
                 ruleset: *ruleset,
                 rule: rule.to_rule(),
-                original: original.clone(),
             },
             NCommand::RunSchedule(schedule) => Command::RunSchedule(schedule.to_schedule()),
             NCommand::NormAction(action) => Command::Action(action.to_action()),
@@ -191,12 +186,10 @@ impl NCommand {
                 name,
                 ruleset,
                 rule,
-                original,
             } => NCommand::NormRule {
                 name: *name,
                 ruleset: *ruleset,
                 rule: rule.map_exprs(f),
-                original: original.clone(),
             },
             NCommand::NormAction(action) => NCommand::NormAction(action.map_exprs(f)),
             NCommand::Check(facts) => {
@@ -357,7 +350,6 @@ pub enum Command {
     Rule {
         name: Symbol,
         ruleset: Symbol,
-        original: Rule,
         rule: Rule,
     },
     Rewrite(Symbol, Rewrite),
@@ -412,7 +404,6 @@ impl ToSexp for Command {
                 name,
                 ruleset,
                 rule,
-                original: _original,
             } => rule.to_sexp(*ruleset, *name),
             Command::RunSchedule(sched) => list!("run-schedule", sched),
             Command::Calc(args, exprs) => list!("calc", list!(++ args), ++ exprs),
@@ -453,7 +444,6 @@ impl Display for Command {
                 ruleset,
                 name,
                 rule,
-                original: _,
             } => rule.fmt_with_ruleset(f, *ruleset, *name),
             Command::Check(facts) => {
                 write!(f, "(check {})", ListDisplay(facts, "\n"))
