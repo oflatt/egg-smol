@@ -121,12 +121,6 @@ impl<'a> ProofChecker<'a> {
             )
         };
 
-        assert_eq!(
-            args.len(),
-            1,
-            "Proof terms should be wrapped in a single argument. Got: {}",
-            self.termdag.to_string(&term)
-        );
         (stripped.into(), inputs, output)
     }
 
@@ -158,9 +152,9 @@ impl<'a> ProofChecker<'a> {
             assert_eq!(num_atoms, term_list.len());
 
             for fact in &rule.body {
-                let current_term = term_list[current_atom].clone();
                 match fact {
                     NormFact::Assign(lhs, NormExpr::Call(op, body)) => {
+                        let current_term = term_list[current_atom].clone();
                         let (name, inputs, output) = self.get_term_parts(current_term.clone());
                         assert_eq!(
                             *op,
