@@ -5,17 +5,77 @@ pub(crate) struct ProofChecker<'a> {
     // A map from a proof to the term in proves
     proven: HashMap<Term, Term>,
     egraph: &'a EGraph,
+    term_encoded_rules: HashMap<Symbol, (NormRule, CommandId)>,
+    globals: HashMap<Symbol, Term>,
 }
 
 impl<'a> ProofChecker<'a> {
     pub(crate) fn check(proofs_to_check: Vec<Term>, termdag: TermDag, egraph: &'a EGraph) {
+        let mut term_encoded_rules = HashMap::default();
+        for cmd in &egraph.term_encoded_program {
+            if let NormCommand {
+                command: NCommand::NormRule { name, rule, .. },
+                metadata: Metadata { id },
+            } = cmd
+            {
+                term_encoded_rules.insert(*name, (rule.clone(), *id));
+            }
+        }
+
         let mut checker = Self {
             termdag,
             egraph,
             proven: HashMap::default(),
+            term_encoded_rules,
+            globals: HashMap::default(),
         };
+
+        checker.eval_globals();
+
         for proof in proofs_to_check {
             checker.check_proof(proof);
+        }
+    }
+
+    fn eval_globals(&mut self) {
+        for cmd in &self.egraph.term_encoded_program {
+            if let NormCommand {
+                command: NCommand::NormAction(action),
+                ..
+            } = cmd
+            {
+                self.eval_global_action(&action);
+            };
+        }
+    }
+
+    fn eval_global_action(&mut self, action: &NormAction) {
+        match action {
+            NormAction::Let(lhs, NormExpr::Call(op, body)) => {
+                let body_terms = body
+                    .iter()
+                    .map(|v| self.globals.get(v).unwrap().clone())
+                    .collect::<Vec<_>>();
+                let body_term = self.termdag.make(*op, body_terms);
+                assert!(self.globals.insert(*lhs, body_term).is_none());
+            }
+            NormAction::LetVar(lhs, rhs) => {
+                let rhs_term = self.globals.get(rhs).unwrap().clone();
+                assert!(self.globals.insert(*lhs, rhs_term).is_none());
+            }
+            NormAction::LetLit(lhs, lit) => {
+                let rhs_term = Term::Lit(lit.clone());
+                assert!(self.globals.insert(*lhs, rhs_term).is_none());
+            }
+
+            NormAction::Set(_, _) => {
+                // TODO set up so that we can check proofs of original
+            }
+            NormAction::Union(_, _) => panic!("No union should exist after term encoding"),
+            NormAction::Extract(..)
+            | NormAction::Print(..)
+            | NormAction::Delete(_)
+            | NormAction::Panic(_) => (),
         }
     }
 
@@ -140,7 +200,7 @@ impl<'a> ProofChecker<'a> {
         if name.contains("-merge-fn__") {
             // TODO check merge function proofs
         } else {
-            let (rule, ctx) = self.egraph.get_term_encoded(name.into());
+            let (rule, ctx) = self.get_term_encoded(name.into());
             let mut current_atom = 0;
             let mut bindings = HashMap::<Symbol, Term>::default();
 
@@ -172,17 +232,19 @@ impl<'a> ProofChecker<'a> {
                         current_atom += 1;
                     }
                     NormFact::AssignVar(lhs, rhs) => {
-                        let rhs_binding = bindings
-                            .get(rhs)
-                            .unwrap_or_else(|| panic!("Failed to get binding for {}", rhs))
-                            .clone();
+                        let rhs_binding = self.globals.get(rhs).cloned().unwrap_or_else(|| {
+                            bindings
+                                .get(rhs)
+                                .unwrap_or_else(|| panic!("Failed to get binding for {}", rhs))
+                                .clone()
+                        });
                         assert!(bindings.insert(*lhs, rhs_binding.clone()).is_none());
                     }
                     NormFact::Compute(lhs, NormExpr::Call(op, body)) => {
                         let body_terms = body
                             .iter()
                             .map(|v| bindings.get(v).unwrap().clone())
-                            .collect();
+                            .collect::<Vec<_>>();
                         let output_term = self.do_compute(*op, body, &body_terms, *ctx);
                         assert!(bindings.insert(*lhs, output_term).is_none());
                     }
@@ -199,21 +261,15 @@ impl<'a> ProofChecker<'a> {
         }
     }
 
-    fn do_compute(
-        &self,
-        op: Symbol,
-        body: &Vec<Symbol>,
-        body_terms: &Vec<Term>,
-        ctx: CommandId,
-    ) -> Term {
+    fn do_compute(&self, op: Symbol, body: &[Symbol], body_terms: &[Term], ctx: CommandId) -> Term {
         let body_values = body_terms
             .iter()
             .map(|t| match t {
-                Term::Lit(lit) => self.egraph.eval_lit(&lit),
+                Term::Lit(lit) => self.egraph.eval_lit(lit),
                 _ => panic!(
                     "Proof checker expects literals when computing primitives. Got: {} under {}",
-                    self.termdag.to_string(&t),
-                    NormExpr::Call(op, body.clone())
+                    self.termdag.to_string(t),
+                    NormExpr::Call(op, body.to_vec())
                 ),
             })
             .collect::<Vec<_>>();
@@ -244,5 +300,11 @@ impl<'a> ProofChecker<'a> {
         });
 
         Term::Lit(lit_output)
+    }
+
+    fn get_term_encoded(&self, name: Symbol) -> &(NormRule, CommandId) {
+        self.term_encoded_rules
+            .get(&name)
+            .unwrap_or_else(|| panic!("get_term_encoded: no rule named '{name}'"))
     }
 }

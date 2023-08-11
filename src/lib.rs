@@ -205,7 +205,7 @@ pub struct EGraph {
     pub(crate) proof_state: ProofState,
     functions: HashMap<Symbol, Function>,
     rulesets: HashMap<Symbol, HashMap<Symbol, CompiledRule>>,
-    term_encoded_rules: HashMap<Symbol, (NormRule, CommandId)>,
+    term_encoded_program: Vec<NormCommand>,
     // TODO remove when we have typed AST
     term_encoded_typeinfo: Option<TypeInfo>,
     rule_to_ruleset: HashMap<Symbol, Symbol>,
@@ -245,10 +245,10 @@ impl Default for EGraph {
             functions: Default::default(),
             rulesets: Default::default(),
             rule_to_ruleset: Default::default(),
-            term_encoded_rules: Default::default(),
             ruleset_iteration: Default::default(),
             proof_state: ProofState::default(),
             global_bindings: Default::default(),
+            term_encoded_program: vec![],
             term_encoded_typeinfo: None,
             match_limit: usize::MAX,
             node_limit: usize::MAX,
@@ -651,10 +651,6 @@ impl EGraph {
         let ruleset = self.rule_to_ruleset.get(&name).unwrap();
         let rules = self.rulesets.get(ruleset).unwrap();
         rules.get(&name).unwrap()
-    }
-
-    fn get_term_encoded(&self, name: Symbol) -> &(NormRule, CommandId) {
-        self.term_encoded_rules.get(&name).unwrap_or_else(|| panic!("get_term_encoded: no rule named '{name}'"))
     }
 
     fn did_change(&self) -> bool {
@@ -1104,11 +1100,7 @@ impl EGraph {
             .desugar_program(program_terms, false, false)?;
 
         // add the term encoded rules to the egraph
-        for command in &program {
-            if let NormCommand { command: NCommand::NormRule{ name, ruleset: _, rule }, metadata: Metadata { id}} = command {
-                self.term_encoded_rules.insert(name.clone(), (rule.clone(), *id));
-            }
-        }
+        self.term_encoded_program.extend(program.clone());
 
         if stop == CompilerPassStop::TermEncoding {
             return Ok(program);
