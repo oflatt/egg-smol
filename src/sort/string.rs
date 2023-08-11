@@ -36,6 +36,12 @@ impl Sort for StringSort {
             string: self,
         });
     }
+
+    fn load_prim(&self, value: Value) -> Option<Literal> {
+        Some(Literal::String(
+            NonZeroU32::new(value.bits as u32).unwrap().into(),
+        ))
+    }
 }
 
 // TODO could use a local symbol table

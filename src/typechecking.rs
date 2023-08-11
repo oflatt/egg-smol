@@ -574,7 +574,12 @@ impl TypeInfo {
             .get(&sym)
             .map(|x| Ok(x.clone()))
             .unwrap_or_else(|| {
-                if let Some(found) = self.local_types.get(&ctx).unwrap().get(&sym) {
+                if let Some(found) = self
+                    .local_types
+                    .get(&ctx)
+                    .unwrap_or_else(|| panic!("Failed to look up ctx {}", ctx))
+                    .get(&sym)
+                {
                     Ok(found.clone())
                 } else {
                     Err(TypeError::Unbound(sym))

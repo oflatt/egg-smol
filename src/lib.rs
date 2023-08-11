@@ -205,7 +205,9 @@ pub struct EGraph {
     pub(crate) proof_state: ProofState,
     functions: HashMap<Symbol, Function>,
     rulesets: HashMap<Symbol, HashMap<Symbol, CompiledRule>>,
-    term_encoded_rules: HashMap<Symbol, NormRule>,
+    term_encoded_rules: HashMap<Symbol, (NormRule, CommandId)>,
+    // TODO remove when we have typed AST
+    term_encoded_typeinfo: Option<TypeInfo>,
     rule_to_ruleset: HashMap<Symbol, Symbol>,
     ruleset_iteration: HashMap<Symbol, usize>,
     proofs_enabled: bool,
@@ -247,6 +249,7 @@ impl Default for EGraph {
             ruleset_iteration: Default::default(),
             proof_state: ProofState::default(),
             global_bindings: Default::default(),
+            term_encoded_typeinfo: None,
             match_limit: usize::MAX,
             node_limit: usize::MAX,
             timestamp: 0,
@@ -650,7 +653,7 @@ impl EGraph {
         rules.get(&name).unwrap()
     }
 
-    fn get_term_encoded(&self, name: Symbol) -> &NormRule {
+    fn get_term_encoded(&self, name: Symbol) -> &(NormRule, CommandId) {
         self.term_encoded_rules.get(&name).unwrap_or_else(|| panic!("get_term_encoded: no rule named '{name}'"))
     }
 
@@ -1102,8 +1105,8 @@ impl EGraph {
 
         // add the term encoded rules to the egraph
         for command in &program {
-            if let NormCommand { command: NCommand::NormRule{ name, ruleset: _, rule }, metadata: _} = command {
-                self.term_encoded_rules.insert(name.clone(), rule.clone());
+            if let NormCommand { command: NCommand::NormRule{ name, ruleset: _, rule }, metadata: Metadata { id}} = command {
+                self.term_encoded_rules.insert(name.clone(), (rule.clone(), *id));
             }
         }
 
@@ -1114,6 +1117,7 @@ impl EGraph {
         // reset type info
         self.proof_state.type_info = type_info_before.clone();
         self.proof_state.type_info.typecheck_program(&program)?;
+        self.term_encoded_typeinfo = Some(self.proof_state.type_info.clone());
         if stop == CompilerPassStop::TypecheckTermEncoding {
             return Ok(program);
         }

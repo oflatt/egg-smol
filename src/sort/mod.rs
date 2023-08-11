@@ -70,6 +70,10 @@ pub trait Sort: Any + Send + Sync + Debug {
     }
 
     fn make_expr(&self, egraph: &EGraph, value: Value) -> Expr;
+
+    fn load_prim(&self, val: Value) -> Option<Literal> {
+        None
+    }
 }
 
 #[derive(Debug)]

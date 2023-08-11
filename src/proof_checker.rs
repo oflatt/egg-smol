@@ -140,7 +140,7 @@ impl<'a> ProofChecker<'a> {
         if name.contains("-merge-fn__") {
             // TODO check merge function proofs
         } else {
-            let rule = self.egraph.get_term_encoded(name.into());
+            let (rule, ctx) = self.egraph.get_term_encoded(name.into());
             let mut current_atom = 0;
             let mut bindings = HashMap::<Symbol, Term>::default();
 
@@ -165,25 +165,84 @@ impl<'a> ProofChecker<'a> {
                         );
                         assert_eq!(body.len(), inputs.len());
                         for (arg, targ) in body.iter().zip(inputs) {
-                            if let Some(existing) = bindings.insert(*arg, targ.clone()) {
-                                assert_eq!(existing, targ);
-                            }
+                            assert!(bindings.insert(*arg, targ.clone()).is_none());
                         }
-
-                        if let Some(existing) = bindings.insert(*lhs, output.clone()) {
-                            assert_eq!(existing, output);
-                        }
+                        assert!(bindings.insert(*lhs, output.clone()).is_none());
 
                         current_atom += 1;
                     }
-                    _ => {
-                        // TODO
+                    NormFact::AssignVar(lhs, rhs) => {
+                        let rhs_binding = bindings
+                            .get(rhs)
+                            .unwrap_or_else(|| panic!("Failed to get binding for {}", rhs))
+                            .clone();
+                        assert!(bindings.insert(*lhs, rhs_binding.clone()).is_none());
                     }
+                    NormFact::Compute(lhs, NormExpr::Call(op, body)) => {
+                        let body_terms = body
+                            .iter()
+                            .map(|v| bindings.get(v).unwrap().clone())
+                            .collect();
+                        let output_term = self.do_compute(*op, body, &body_terms, *ctx);
+                        assert!(bindings.insert(*lhs, output_term).is_none());
+                    }
+                    NormFact::AssignLit(lhs, lit) => {
+                        let term = Term::Lit(lit.clone());
+                        assert!(bindings.insert(*lhs, term).is_none());
+                    }
+                    NormFact::ConstrainEq(_, _) => {}
                 }
             }
 
             // TODO check that the to_prove
             // actually appears in the body with the given bindings
         }
+    }
+
+    fn do_compute(
+        &self,
+        op: Symbol,
+        body: &Vec<Symbol>,
+        body_terms: &Vec<Term>,
+        ctx: CommandId,
+    ) -> Term {
+        let body_values = body_terms
+            .iter()
+            .map(|t| match t {
+                Term::Lit(lit) => self.egraph.eval_lit(&lit),
+                _ => panic!(
+                    "Proof checker expects literals when computing primitives. Got: {} under {}",
+                    self.termdag.to_string(&t),
+                    NormExpr::Call(op, body.clone())
+                ),
+            })
+            .collect::<Vec<_>>();
+        let input_types = body
+            .iter()
+            .map(|v| {
+                self.egraph
+                    .term_encoded_typeinfo
+                    .as_ref()
+                    .unwrap()
+                    .lookup(ctx, *v)
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let (primitive, output_type) = self
+            .egraph
+            .term_encoded_typeinfo
+            .as_ref()
+            .unwrap()
+            .lookup_primitive(op, &input_types)
+            .unwrap();
+        let output = primitive.apply(&body_values, self.egraph).unwrap();
+        let lit_output = output_type.load_prim(output).unwrap_or_else(|| {
+            panic!(
+                "Cannot convert output of primitive to literal for sort {}",
+                output_type.name(),
+            )
+        });
+
+        Term::Lit(lit_output)
     }
 }
