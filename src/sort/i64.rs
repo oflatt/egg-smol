@@ -62,6 +62,10 @@ impl Sort for I64Sort {
         assert!(value.tag == self.name());
         Expr::Lit(Literal::Int(value.bits as _))
     }
+
+    fn load_prim(&self, val: Value) -> Option<Literal> {
+        Some(Literal::Int(val.bits as _))
+    }
 }
 
 impl IntoSort for i64 {

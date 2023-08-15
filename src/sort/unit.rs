@@ -29,6 +29,10 @@ impl Sort for UnitSort {
         assert_eq!(value.tag, self.name);
         Expr::Lit(Literal::Unit)
     }
+
+    fn load_prim(&self, value: Value) -> Option<Literal> {
+        Some(Literal::Unit)
+    }
 }
 
 impl IntoSort for () {

@@ -7,6 +7,12 @@ pub(crate) struct ProofChecker<'a> {
     egraph: &'a EGraph,
     term_encoded_rules: HashMap<Symbol, (NormRule, CommandId)>,
     globals: HashMap<Symbol, Term>,
+    global_primitives: HashMap<Symbol, Value>,
+}
+
+struct RuleContext {
+    bindings: HashMap<Symbol, Term>,
+    primitive_bindings: HashMap<Symbol, Value>,
 }
 
 impl<'a> ProofChecker<'a> {
@@ -28,6 +34,7 @@ impl<'a> ProofChecker<'a> {
             proven: HashMap::default(),
             term_encoded_rules,
             globals: HashMap::default(),
+            global_primitives: HashMap::default(),
         };
 
         checker.eval_globals();
@@ -41,31 +48,59 @@ impl<'a> ProofChecker<'a> {
         for cmd in &self.egraph.term_encoded_program {
             if let NormCommand {
                 command: NCommand::NormAction(action),
-                ..
+                metadata: Metadata { id },
             } = cmd
             {
-                self.eval_global_action(&action);
+                self.eval_global_action(action, *id);
             };
         }
     }
 
-    fn eval_global_action(&mut self, action: &NormAction) {
+    fn eval_global_action(&mut self, action: &NormAction, id: CommandId) {
         match action {
             NormAction::Let(lhs, NormExpr::Call(op, body)) => {
-                let body_terms = body
+                let input_types = body
                     .iter()
-                    .map(|v| self.globals.get(v).unwrap().clone())
+                    .map(|v| self.egraph.term_encoded_typeinfo.lookup(id, *v).unwrap())
                     .collect::<Vec<_>>();
-                let body_term = self.termdag.make(*op, body_terms);
-                assert!(self.globals.insert(*lhs, body_term).is_none());
+                let func_type = self
+                    .egraph
+                    .term_encoded_typeinfo
+                    .lookup_func(*op, input_types)
+                    .unwrap();
+                if func_type.is_primitive {
+                    let body_values =
+                        body.iter()
+                            .map(|v| {
+                                self.get_global_value(*v).unwrap_or_else(
+                            ||
+                            panic!("Proof checker expected global value for {} in computation {}",
+                            v, NormExpr::Call(*op, body.clone()))
+                        )
+                            })
+                            .collect::<Vec<_>>();
+                    let (output_value, output_term) = self.do_compute(*op, body, &body_values, id);
+                    self.set_global_term(*lhs, output_term);
+                    self.set_global_value(*lhs, output_value);
+                } else {
+                    let body_terms = body
+                        .iter()
+                        .map(|v| self.get_global_term(*v))
+                        .collect::<Vec<_>>();
+                    let body_term = self.termdag.make(*op, body_terms);
+                    self.set_global_term(*lhs, body_term)
+                }
             }
             NormAction::LetVar(lhs, rhs) => {
-                let rhs_term = self.globals.get(rhs).unwrap().clone();
-                assert!(self.globals.insert(*lhs, rhs_term).is_none());
+                let rhs_term = self.get_global_term(*rhs);
+                self.set_global_term(*lhs, rhs_term);
+                if let Some(rhs_value) = self.get_global_value(*rhs) {
+                    self.set_global_value(*lhs, rhs_value)
+                }
             }
             NormAction::LetLit(lhs, lit) => {
                 let rhs_term = Term::Lit(lit.clone());
-                assert!(self.globals.insert(*lhs, rhs_term).is_none());
+                self.set_global_term(*lhs, rhs_term)
             }
 
             NormAction::Set(_, _) => {
@@ -200,9 +235,12 @@ impl<'a> ProofChecker<'a> {
         if name.contains("-merge-fn__") {
             // TODO check merge function proofs
         } else {
-            let (rule, ctx) = self.get_term_encoded(name.into());
+            let (rule, ctx) = self.get_term_encoded(name.into()).clone();
             let mut current_atom = 0;
-            let mut bindings = HashMap::<Symbol, Term>::default();
+            let mut rule_ctx = RuleContext {
+                bindings: HashMap::default(),
+                primitive_bindings: HashMap::default(),
+            };
 
             let num_atoms = rule
                 .body
@@ -225,32 +263,36 @@ impl<'a> ProofChecker<'a> {
                         );
                         assert_eq!(body.len(), inputs.len());
                         for (arg, targ) in body.iter().zip(inputs) {
-                            assert!(bindings.insert(*arg, targ.clone()).is_none());
+                            self.set_term(&mut rule_ctx, *arg, targ);
                         }
-                        assert!(bindings.insert(*lhs, output.clone()).is_none());
+                        self.set_term(&mut rule_ctx, *lhs, output.clone());
 
                         current_atom += 1;
                     }
                     NormFact::AssignVar(lhs, rhs) => {
-                        let rhs_binding = self.globals.get(rhs).cloned().unwrap_or_else(|| {
-                            bindings
-                                .get(rhs)
-                                .unwrap_or_else(|| panic!("Failed to get binding for {}", rhs))
-                                .clone()
-                        });
-                        assert!(bindings.insert(*lhs, rhs_binding.clone()).is_none());
+                        let rhs_binding = self.get_term(&rule_ctx, *rhs);
+                        self.set_term(&mut rule_ctx, *lhs, rhs_binding);
+
+                        if let Some(rhs_value) = self.get_value(&rule_ctx, *rhs) {
+                            self.set_value(&mut rule_ctx, *lhs, rhs_value)
+                        }
                     }
                     NormFact::Compute(lhs, NormExpr::Call(op, body)) => {
-                        let body_terms = body
+                        let body_values = body
                             .iter()
-                            .map(|v| bindings.get(v).unwrap().clone())
+                            .map(|v| self.get_value(&rule_ctx, *v)
+                            .unwrap_or_else(||
+                                panic!("Proof checker detected computation on non-primitive variable {} in computation: {}",
+                                v, NormExpr::Call(*op, body.clone()))))
                             .collect::<Vec<_>>();
-                        let output_term = self.do_compute(*op, body, &body_terms, *ctx);
-                        assert!(bindings.insert(*lhs, output_term).is_none());
+                        let (output_value, output_term) =
+                            self.do_compute(*op, &body, &body_values, ctx);
+                        self.set_term(&mut rule_ctx, *lhs, output_term);
+                        self.set_value(&mut rule_ctx, *lhs, output_value);
                     }
                     NormFact::AssignLit(lhs, lit) => {
                         let term = Term::Lit(lit.clone());
-                        assert!(bindings.insert(*lhs, term).is_none());
+                        self.set_term(&mut rule_ctx, *lhs, term.clone());
                     }
                     NormFact::ConstrainEq(_, _) => {}
                 }
@@ -261,37 +303,85 @@ impl<'a> ProofChecker<'a> {
         }
     }
 
-    fn do_compute(&self, op: Symbol, body: &[Symbol], body_terms: &[Term], ctx: CommandId) -> Term {
-        let body_values = body_terms
-            .iter()
-            .map(|t| match t {
-                Term::Lit(lit) => self.egraph.eval_lit(lit),
-                _ => panic!(
-                    "Proof checker expects literals when computing primitives. Got: {} under {}",
-                    self.termdag.to_string(t),
-                    NormExpr::Call(op, body.to_vec())
-                ),
+    fn get_global_term(&self, sym: Symbol) -> Term {
+        self.globals
+            .get(&sym)
+            .unwrap_or_else(|| panic!("Failed to get binding for {}", sym))
+            .clone()
+    }
+
+    fn set_global_term(&mut self, sym: Symbol, term: Term) {
+        assert!(self.globals.insert(sym, term.clone()).is_none());
+        if let Term::Lit(l) = term {
+            self.global_primitives.insert(sym, self.egraph.eval_lit(&l));
+        }
+    }
+
+    fn get_global_value(&self, sym: Symbol) -> Option<Value> {
+        self.global_primitives.get(&sym).cloned()
+    }
+
+    fn set_global_value(&mut self, sym: Symbol, val: Value) {
+        if let Some(existing) = self.global_primitives.insert(sym, val) {
+            assert!(existing == val);
+        }
+    }
+
+    fn get_term(&self, rule_ctx: &RuleContext, sym: Symbol) -> Term {
+        rule_ctx
+            .bindings
+            .get(&sym)
+            .unwrap_or_else(|| {
+                self.globals
+                    .get(&sym)
+                    .unwrap_or_else(|| panic!("Failed to get binding for {}", sym))
             })
-            .collect::<Vec<_>>();
+            .clone()
+    }
+
+    fn get_value(&self, rule_ctx: &RuleContext, sym: Symbol) -> Option<Value> {
+        rule_ctx
+            .primitive_bindings
+            .get(&sym)
+            .or(self.global_primitives.get(&sym))
+            .cloned()
+    }
+
+    fn set_term(&mut self, rule_ctx: &mut RuleContext, sym: Symbol, term: Term) {
+        assert!(rule_ctx.bindings.insert(sym, term.clone()).is_none());
+        if let Term::Lit(l) = term {
+            rule_ctx
+                .primitive_bindings
+                .insert(sym, self.egraph.eval_lit(&l));
+        }
+    }
+
+    fn set_value(&mut self, rule_ctx: &mut RuleContext, sym: Symbol, val: Value) {
+        if let Some(existing) = rule_ctx.primitive_bindings.insert(sym, val) {
+            assert!(existing == val);
+        }
+    }
+
+    fn do_compute(
+        &self,
+        op: Symbol,
+        body: &[Symbol],
+        body_values: &[Value],
+        ctx: CommandId,
+    ) -> (Value, Term) {
         let input_types = body
             .iter()
-            .map(|v| {
-                self.egraph
-                    .term_encoded_typeinfo
-                    .as_ref()
-                    .unwrap()
-                    .lookup(ctx, *v)
-                    .unwrap()
-            })
+            .map(|v| self.egraph.term_encoded_typeinfo.lookup(ctx, *v).unwrap())
             .collect::<Vec<_>>();
         let (primitive, output_type) = self
             .egraph
             .term_encoded_typeinfo
-            .as_ref()
-            .unwrap()
             .lookup_primitive(op, &input_types)
             .unwrap();
-        let output = primitive.apply(&body_values, self.egraph).unwrap();
+        let output = primitive
+            .apply(body_values, self.egraph)
+            .unwrap_or_else(|| panic!("Proof checking failed- primitive did not return a value"));
+
         let lit_output = output_type.load_prim(output).unwrap_or_else(|| {
             panic!(
                 "Cannot convert output of primitive to literal for sort {}",
@@ -299,7 +389,7 @@ impl<'a> ProofChecker<'a> {
             )
         });
 
-        Term::Lit(lit_output)
+        (output, Term::Lit(lit_output))
     }
 
     fn get_term_encoded(&self, name: Symbol) -> &(NormRule, CommandId) {

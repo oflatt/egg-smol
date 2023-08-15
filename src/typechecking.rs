@@ -629,7 +629,11 @@ impl TypeInfo {
         None
     }
 
-    fn lookup_func(&self, sym: Symbol, input_types: Vec<ArcSort>) -> Result<FuncType, TypeError> {
+    pub fn lookup_func(
+        &self,
+        sym: Symbol,
+        input_types: Vec<ArcSort>,
+    ) -> Result<FuncType, TypeError> {
         if let Some(found) = self.func_types.get(&sym) {
             if found.input.len() != input_types.len() {
                 return Err(TypeError::Arity {

@@ -207,7 +207,7 @@ pub struct EGraph {
     rulesets: HashMap<Symbol, HashMap<Symbol, CompiledRule>>,
     term_encoded_program: Vec<NormCommand>,
     // TODO remove when we have typed AST
-    term_encoded_typeinfo: Option<TypeInfo>,
+    term_encoded_typeinfo: TypeInfo,
     rule_to_ruleset: HashMap<Symbol, Symbol>,
     ruleset_iteration: HashMap<Symbol, usize>,
     proofs_enabled: bool,
@@ -249,7 +249,7 @@ impl Default for EGraph {
             proof_state: ProofState::default(),
             global_bindings: Default::default(),
             term_encoded_program: vec![],
-            term_encoded_typeinfo: None,
+            term_encoded_typeinfo: TypeInfo::default(),
             match_limit: usize::MAX,
             node_limit: usize::MAX,
             timestamp: 0,
@@ -1109,7 +1109,8 @@ impl EGraph {
         // reset type info
         self.proof_state.type_info = type_info_before.clone();
         self.proof_state.type_info.typecheck_program(&program)?;
-        self.term_encoded_typeinfo = Some(self.proof_state.type_info.clone());
+        // TODO remove when AST is typed
+        self.term_encoded_typeinfo.typecheck_program(&program).unwrap();
         if stop == CompilerPassStop::TypecheckTermEncoding {
             return Ok(program);
         }

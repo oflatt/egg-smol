@@ -6,7 +6,7 @@
     (Const Rational)
     (Var String))
 
-(rewrite (Add a b) (Add (Add a b) (Const (rational 0 1))))
+(rewrite (Add a b) (Add (Add a b) (Const (rational 0 1))) :name "add0")
 
 (rewrite (Add a b) (Add b a))
 
