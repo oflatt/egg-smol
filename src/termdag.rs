@@ -1,7 +1,9 @@
+use std::fmt::{Display, Formatter};
+
 use crate::{
     ast::{Expr, Literal},
-    util::{HashMap, HashSet, IndexMap},
-    EGraph, Symbol, Value,
+    util::{HashMap, HashSet, IndexMap, ListDisplay},
+    Symbol, Value, UNIT_SYM,
 };
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -11,12 +13,23 @@ pub enum Term {
     App(Symbol, Vec<Value>),
 }
 
+/// Some functions in egglog are not datatypes
+/// because they have a merge function.
+/// A Term is built from only datatypes, so it cannot
+/// represent the entries in these tables.
+/// So we have this datatype for that
+pub struct FunctionEntry {
+    pub name: Symbol,
+    pub inputs: Vec<Term>,
+    pub output: Term,
+}
+
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct TermDag {
     // use the value as the id so that
     // the ordering between terms is preserved
     nodes: IndexMap<Value, Term>,
-    hashcons: HashMap<Term, Value>,
+    hashcons: IndexMap<Term, Value>,
 }
 
 #[macro_export]
@@ -87,7 +100,7 @@ impl TermDag {
 
     fn add_node(&mut self, node: &Term, value: Value) {
         if self.hashcons.get(node).is_none() {
-            self.nodes.insert(value, node.clone());
+            assert!(self.nodes.insert(value, node.clone()).is_none());
             self.hashcons.insert(node.clone(), value);
         }
     }
@@ -146,5 +159,22 @@ impl TermDag {
         }
 
         stored.get(&id).unwrap().clone()
+    }
+
+    pub fn display_entry(&self, entry: &FunctionEntry) -> String {
+        if entry.output == Term::App(Symbol::from(UNIT_SYM), vec![]) {
+            format!(
+                "({} {})",
+                entry.name,
+                ListDisplay(entry.inputs.iter().map(|t| self.to_string(t)), " "),
+            )
+        } else {
+            format!(
+                "({} {}) -> {}",
+                entry.name,
+                ListDisplay(entry.inputs.iter().map(|t| self.to_string(t)), " "),
+                self.to_string(&entry.output)
+            )
+        }
     }
 }

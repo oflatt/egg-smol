@@ -137,15 +137,16 @@ impl Sort for VecSort {
         })
     }
 
-    fn make_expr(&self, egraph: &EGraph, value: Value) -> Expr {
-        let vec = ValueVec::load(self, &value);
+    fn make_expr(&self, egraph: &EGraph, value: Value, termdag: &mut TermDag) -> Term {
+        todo!("VecSort::make_expr");
+        /*let vec = ValueVec::load(self, &value);
         let mut expr = Expr::call("vec-empty", []);
         let mut termdag = TermDag::default();
         for e in vec.iter().rev() {
             let e = egraph.extract(*e, &mut termdag, &self.element).1;
             expr = Expr::call("vec-push", [expr, termdag.term_to_expr(&e)])
         }
-        expr
+        expr*/
     }
 }
 

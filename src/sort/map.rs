@@ -128,17 +128,43 @@ impl Sort for MapSort {
         });
     }
 
-    fn make_expr(&self, egraph: &EGraph, value: Value) -> Expr {
+    fn make_expr(&self, egraph: &EGraph, value: Value, termdag: &mut TermDag) -> Term {
         let map = ValueMap::load(self, &value);
-        let mut expr = Expr::call("map-empty", []);
-        let mut termdag = TermDag::default();
-        for (k, v) in map.iter().rev() {
-            let k = egraph.extract(*k, &mut termdag, &self.key).1;
-            let v = egraph.extract(*v, &mut termdag, &self.value).1;
-            expr = Expr::call(
-                "map-insert",
-                [expr, termdag.term_to_expr(&k), termdag.term_to_expr(&v)],
+        let map_empty = egraph
+            .proof_state
+            .type_info
+            .lookup_primitive("map-empty".into(), &[])
+            .unwrap()
+            .0;
+        let map_insert = egraph
+            .proof_state
+            .type_info
+            .lookup_primitive(
+                "map-insert".into(),
+                &[
+                    Arc::new(Self {
+                        name: self.name,
+                        key: self.key.clone(),
+                        value: self.value.clone(),
+                        maps: Default::default(),
+                    }),
+                    self.value.clone(),
+                ],
             )
+            .unwrap()
+            .0;
+        let empty_val = map_empty.apply(&[], egraph).unwrap();
+        let mut expr = termdag.make("map-empty".into(), vec![], empty_val);
+        for (k, v) in map.iter().rev() {
+            let k = egraph.extract(*k, termdag, &self.key).1;
+            let v = egraph.extract(*v, termdag, &self.value).1;
+            let children_values = vec![termdag.lookup(&k), termdag.lookup(&v)];
+            let children_terms = children_values
+                .iter()
+                .map(|v| termdag.get(*v))
+                .collect::<Vec<_>>();
+            let new_value = map_insert.apply(&children_values, egraph).unwrap();
+            expr = termdag.make("map-insert".into(), children_terms, new_value);
         }
         expr
     }

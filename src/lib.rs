@@ -21,7 +21,7 @@ use instant::{Duration, Instant};
 use proof_checker::ProofChecker;
 pub use serialize::SerializeConfig;
 use sort::*;
-use termdag::{Term, TermDag};
+use termdag::{Term, TermDag, FunctionEntry};
 use thiserror::Error;
 
 use proofs::ProofState;
@@ -384,7 +384,7 @@ impl EGraph {
         &mut self,
         sym: Symbol,
         n: usize,
-    ) -> Result<(Vec<(Term, Term)>, TermDag), Error> {
+    ) -> Result<(Vec<FunctionEntry>, TermDag), Error> {
         let f = self.functions.get(&sym).ok_or(TypeError::Unbound(sym))?;
         let schema = f.schema.clone();
         let nodes = f
@@ -414,7 +414,11 @@ impl EGraph {
             } else {
                 schema.output.make_expr(self, out.value, &mut termdag)
             };
-            terms.push((termdag.make(sym, children, out.value), out_term));
+            terms.push(FunctionEntry {
+                name: sym,
+                inputs: children,
+                output: out_term,
+            });
         }
         drop(extractor);
 
@@ -431,12 +435,8 @@ impl EGraph {
 
         let mut buf = String::new();
         let s = &mut buf;
-        for (term, output) in terms_with_outputs {
-            write!(s, "{}", termdag.to_string(&term)).unwrap();
-            if !out_is_unit {
-                write!(s, " -> {}", termdag.to_string(&output)).unwrap();
-            }
-            s.push('\n');
+        for entry in terms_with_outputs {
+            write!(s, "{}", termdag.display_entry(&entry));
         }
 
         Ok(buf)
@@ -842,7 +842,7 @@ impl EGraph {
                         .function_to_dag(self.proof_state.proof_func_name(), usize::MAX)
                         .unwrap();
                     ProofChecker::check(
-                        terms.into_iter().map(|(_, output)| output).collect(),
+                        terms.into_iter().map(|entry| entry.output).collect(),
                         termdag,
                         self,
                     );

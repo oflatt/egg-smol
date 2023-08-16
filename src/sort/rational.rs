@@ -106,18 +106,19 @@ impl Sort for RationalSort {
         add_primitives!(eg, "<=" = |a: Rational, b: Rational| -> Opt { if a <= b {Some(())} else {None} }); 
         add_primitives!(eg, ">=" = |a: Rational, b: Rational| -> Opt { if a >= b {Some(())} else {None} }); 
    }
-    fn make_expr(&self, _egraph: &EGraph, value: Value) -> Expr {
+    fn make_expr(&self, egraph: &EGraph, value: Value, termdag: &mut TermDag) -> Term {
         assert!(value.tag == self.name());
         let rat = Rational::load(self, &value);
         let numer = *rat.numer();
         let denom = *rat.denom();
-        Expr::call(
-            "rational",
-            vec![
-                Expr::Lit(Literal::Int(numer)),
-                Expr::Lit(Literal::Int(denom)),
-            ],
-        )
+        let numer_lit = Literal::Int(numer);
+        let denom_lit = Literal::Int(denom);
+        let numer_val = egraph.eval_lit(&numer_lit);
+        let denom_val = egraph.eval_lit(&denom_lit);
+        let numer_term = termdag.make_lit(numer_lit, numer_val);
+        let denom_term = termdag.make_lit(denom_lit, denom_val);
+
+        termdag.make("rational".into(), vec![numer_term, denom_term], value)
     }
 }
 

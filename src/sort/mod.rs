@@ -105,7 +105,7 @@ impl Sort for EqSort {
         }
     }
 
-    fn make_expr(&self, _egraph: &EGraph, _value: Value) -> Expr {
+    fn make_expr(&self, _egraph: &EGraph, _value: Value, _termdag: &mut TermDag) -> Term {
         unimplemented!("No make_expr for EqSort {}", self.name)
     }
 }
