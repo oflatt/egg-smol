@@ -1,20 +1,22 @@
 use crate::{
     ast::{Expr, Literal},
-    util::{HashMap, HashSet},
-    Symbol,
+    util::{HashMap, HashSet, IndexMap},
+    EGraph, Symbol, Value,
 };
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Term {
     Lit(Literal),
     Var(Symbol),
-    App(Symbol, Vec<usize>),
+    App(Symbol, Vec<Value>),
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct TermDag {
-    nodes: Vec<Term>,
-    hashcons: HashMap<Term, usize>,
+    // use the value as the id so that
+    // the ordering between terms is preserved
+    nodes: IndexMap<Value, Term>,
+    hashcons: HashMap<Term, Value>,
 }
 
 #[macro_export]
@@ -47,47 +49,47 @@ impl TermDag {
 
     // users can't construct a termnode, so just
     // look it up
-    pub fn lookup(&self, node: &Term) -> usize {
-        *self.hashcons.get(node).unwrap()
+    pub fn lookup(&self, node: &Term) -> Value {
+        *self.hashcons.get(node).unwrap_or_else(|| {
+            panic!(
+                "Term {:?} not found in hashcons. Did you forget to add it?",
+                node
+            )
+        })
     }
 
-    pub fn get(&self, idx: usize) -> Term {
-        self.nodes[idx].clone()
+    pub fn get(&self, id: Value) -> Term {
+        self.nodes.get(&id).unwrap().clone()
     }
 
-    pub fn make(&mut self, sym: Symbol, children: Vec<Term>) -> Term {
+    pub fn make(&mut self, sym: Symbol, children: Vec<Term>, value: Value) -> Term {
         let node = Term::App(sym, children.iter().map(|c| self.lookup(c)).collect());
 
-        self.add_node(&node);
+        self.add_node(&node, value);
 
         node
     }
 
-    fn add_node(&mut self, node: &Term) {
-        if self.hashcons.get(node).is_none() {
-            let idx = self.nodes.len();
-            self.nodes.push(node.clone());
-            self.hashcons.insert(node.clone(), idx);
-        }
+    pub fn make_lit(&mut self, lit: Literal, value: Value) -> Term {
+        let node = Term::Lit(lit);
+
+        self.add_node(&node, value);
+
+        node
     }
 
-    pub fn expr_to_term(&mut self, expr: &Expr) -> Term {
-        let res = match expr {
-            Expr::Lit(lit) => Term::Lit(lit.clone()),
-            Expr::Var(v) => Term::Var(*v),
-            Expr::Call(op, args) => {
-                let args = args
-                    .iter()
-                    .map(|a| {
-                        let term = self.expr_to_term(a);
-                        self.lookup(&term)
-                    })
-                    .collect();
-                Term::App(*op, args)
-            }
-        };
-        self.add_node(&res);
-        res
+    pub fn lookup_term(&self, sym: Symbol, children: Vec<Term>) -> Term {
+        let children = children.iter().map(|c| self.lookup(c)).collect::<Vec<_>>();
+        let node = Term::App(sym, children);
+        self.lookup(&node);
+        node
+    }
+
+    fn add_node(&mut self, node: &Term, value: Value) {
+        if self.hashcons.get(node).is_none() {
+            self.nodes.insert(value, node.clone());
+            self.hashcons.insert(node.clone(), value);
+        }
     }
 
     pub fn term_to_expr(&mut self, term: &Term) -> Expr {
@@ -108,15 +110,15 @@ impl TermDag {
     }
 
     pub fn to_string(&self, term: &Term) -> String {
-        let mut stored = HashMap::<usize, String>::default();
-        let mut seen = HashSet::<usize>::default();
+        let mut stored = HashMap::<Value, String>::default();
+        let mut seen = HashSet::default();
         let id = self.lookup(term);
         // use a stack to avoid stack overflow
         let mut stack = vec![id];
         while !stack.is_empty() {
             let next = stack.pop().unwrap();
 
-            match self.nodes[next].clone() {
+            match self.nodes.get(&next).unwrap().clone() {
                 Term::App(name, children) => {
                     if seen.contains(&next) {
                         let mut str = String::new();

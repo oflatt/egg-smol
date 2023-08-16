@@ -58,9 +58,9 @@ impl Sort for I64Sort {
         add_primitives!(typeinfo, "max" = |a: i64, b: i64| -> i64 { a.max(b) });
     }
 
-    fn make_expr(&self, _egraph: &EGraph, value: Value) -> Expr {
+    fn make_expr(&self, _egraph: &EGraph, value: Value, termdag: &mut termdag::TermDag) -> Term {
         assert!(value.tag == self.name());
-        Expr::Lit(Literal::Int(value.bits as _))
+        termdag.make_lit(Literal::Int(value.bits as _), value)
     }
 
     fn load_prim(&self, val: Value) -> Option<Literal> {

@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 use crate::{
     ast::{FunctionDecl, Id},
     function::{table::hash_values, ValueVec},
+    termdag::TermDag,
     util::HashMap,
     EGraph, Value,
 };
@@ -156,7 +157,9 @@ impl EGraph {
                         println!("{} is a container sort", sort.name());
                         sort.name().to_string()
                     } else {
-                        sort.make_expr(self, *value).to_string()
+                        let mut termdag = TermDag::default();
+                        let term = sort.make_expr(self, *value, &mut termdag);
+                        termdag.to_string(&term)
                     };
                     egraph.nodes.insert(
                         node_id.clone(),

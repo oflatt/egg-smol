@@ -87,7 +87,7 @@ impl<'a> ProofChecker<'a> {
                         .iter()
                         .map(|v| self.get_global_term(*v))
                         .collect::<Vec<_>>();
-                    let body_term = self.termdag.make(*op, body_terms);
+                    let body_term = self.termdag.lookup_term(*op, body_terms);
                     self.set_global_term(*lhs, body_term)
                 }
             }

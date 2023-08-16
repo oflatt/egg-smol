@@ -67,7 +67,7 @@ impl EGraph {
                                 .all(|x| x))
                         .then(|| {
                             let node = Node { sym, inputs };
-                            ext.expr_from_node(&node, termdag)
+                            ext.expr_from_node(&node, termdag, output.value)
                         })
                     })
                     .collect()
@@ -103,14 +103,14 @@ impl<'a> Extractor<'a> {
         extractor
     }
 
-    fn expr_from_node(&self, node: &Node, termdag: &mut TermDag) -> Term {
+    fn expr_from_node(&self, node: &Node, termdag: &mut TermDag, value: Value) -> Term {
         let mut children = vec![];
         for value in node.inputs {
             let arcsort = self.egraph.get_sort(value).unwrap();
             children.push(self.find_best(*value, termdag, &arcsort).1)
         }
 
-        termdag.make(node.sym, children)
+        termdag.make(node.sym, children, value)
     }
 
     fn find(&self, value: Value) -> Id {
@@ -150,7 +150,7 @@ impl<'a> Extractor<'a> {
                 .clone();
             (cost, node)
         } else {
-            (0, termdag.expr_to_term(&sort.make_expr(self.egraph, value)))
+            (0, sort.make_expr(self.egraph, value, termdag))
         }
     }
 
@@ -171,7 +171,7 @@ impl<'a> Extractor<'a> {
                 terms.push(term.clone());
                 *cost
             } else {
-                let term = termdag.expr_to_term(&ty.make_expr(self.egraph, *value));
+                let term = ty.make_expr(self.egraph, *value, termdag);
                 terms.push(term);
                 1
             });
@@ -191,7 +191,8 @@ impl<'a> Extractor<'a> {
                         if let Some((term_inputs, new_cost)) =
                             self.node_total_cost(func, inputs, termdag)
                         {
-                            let make_new_pair = || (new_cost, termdag.make(sym, term_inputs));
+                            let make_new_pair =
+                                || (new_cost, termdag.make(sym, term_inputs, output.value));
 
                             let id = self.find(output.value);
                             match self.costs.entry(id) {

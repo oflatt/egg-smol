@@ -403,18 +403,18 @@ impl EGraph {
                 if a_type.is_eq_sort() {
                     children.push(extractor.find_best(a, &mut termdag, a_type).1);
                 } else {
-                    children.push(termdag.expr_to_term(&a_type.make_expr(self, a)));
+                    children.push(a_type.make_expr(self, a, &mut termdag));
                 };
             }
 
-            let out = if schema.output.is_eq_sort() {
+            let out_term = if schema.output.is_eq_sort() {
                 extractor
                     .find_best(out.value, &mut termdag, &schema.output)
                     .1
             } else {
-                termdag.expr_to_term(&schema.output.make_expr(self, out.value))
+                schema.output.make_expr(self, out.value, &mut termdag)
             };
-            terms.push((termdag.make(sym, children), out));
+            terms.push((termdag.make(sym, children, out.value), out_term));
         }
         drop(extractor);
 

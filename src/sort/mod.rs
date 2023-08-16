@@ -69,7 +69,7 @@ pub trait Sort: Any + Send + Sync + Debug {
         let _ = info;
     }
 
-    fn make_expr(&self, egraph: &EGraph, value: Value) -> Expr;
+    fn make_expr(&self, egraph: &EGraph, value: Value, termdag: &mut TermDag) -> Term;
 
     fn load_prim(&self, val: Value) -> Option<Literal> {
         None
