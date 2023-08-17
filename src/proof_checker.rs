@@ -1,4 +1,4 @@
-use crate::*;
+use crate::{termdag::TermId, *};
 
 pub(crate) struct ProofChecker<'a> {
     termdag: TermDag,
@@ -69,17 +69,16 @@ impl<'a> ProofChecker<'a> {
                     .lookup_func(*op, input_types)
                     .unwrap();
                 if func_type.is_primitive {
-                    let body_values =
-                        body.iter()
-                            .map(|v| {
-                                self.get_global_value(*v).unwrap_or_else(
-                            ||
-                            panic!("Proof checker expected global value for {} in computation {}",
-                            v, NormExpr::Call(*op, body.clone()))
-                        )
-                            })
-                            .collect::<Vec<_>>();
-                    let (output_value, output_term) = self.do_compute(*op, body, &body_values, id);
+                    let body_values = body
+                        .iter()
+                        .map(|v| self.get_global_value(*v))
+                        .collect::<Vec<_>>();
+                    let body_terms = body
+                        .iter()
+                        .map(|v| self.get_global_term(*v))
+                        .collect::<Vec<_>>();
+                    let (output_value, output_term) =
+                        self.do_compute(*op, body, &body_terms, &body_values, id);
                     self.set_global_term(*lhs, output_term);
                     self.set_global_value(*lhs, output_value);
                 } else {
@@ -126,15 +125,15 @@ impl<'a> ProofChecker<'a> {
                     TODO check this was an original term in the egraph
                     */
                     assert!(children.len() == 1);
-                    self.termdag.get(children[0])
+                    self.termdag.get_term(children[0])
                 } else if op.as_str() == self.egraph.proof_state.rule_proof_constructor() {
                     assert!(children.len() == 3);
                     self.check_rule_proof(
-                        self.string_from_term(self.termdag.get(children[0])),
-                        self.unpack_proof_list(self.termdag.get(children[1])),
-                        self.termdag.get(children[2]),
+                        self.string_from_term(self.termdag.get_term(children[0])),
+                        self.unpack_proof_list(self.termdag.get_term(children[1])),
+                        self.termdag.get_term(children[2]),
                     );
-                    self.termdag.get(children[2])
+                    self.termdag.get_term(children[2])
                     // TODO check the rule proof
                 } else {
                     panic!("Unrecognized proof type: {}", op);
@@ -165,8 +164,8 @@ impl<'a> ProofChecker<'a> {
         match_term_app!(proof_list; {
             (self.egraph.proof_state.proof_null_constructor(), []) => vec![],
             (self.egraph.proof_state.proof_cons_constructor(), [head, tail]) => {
-                let mut res = self.unpack_proof_list_helper(self.termdag.get(*tail));
-                res.push(self.termdag.get(*head));
+                let mut res = self.unpack_proof_list_helper(self.termdag.get_term(*tail));
+                res.push(self.termdag.get_term(*head));
                 res
             }
         })
@@ -194,13 +193,15 @@ impl<'a> ProofChecker<'a> {
         let (inputs, output) = if func_type.is_datatype {
             // unwrap datatypes twice
             assert!(args.len() == 1);
-            let unwrapped = self.termdag.get(args[0]);
+            let unwrapped = self.termdag.get_term(args[0]);
             let Term::App(data_head, args) = unwrapped.clone() else {
                     panic!("Expected a datatype wrapper. Got: {}", self.termdag.to_string(&unwrapped))
                 };
             assert!(data_head.as_str() == stripped);
             (
-                args.iter().map(|child| self.termdag.get(*child)).collect(),
+                args.iter()
+                    .map(|child| self.termdag.get_term(*child))
+                    .collect(),
                 unwrapped,
             )
 
@@ -210,9 +211,9 @@ impl<'a> ProofChecker<'a> {
             (
                 args[..args.len() - 1]
                     .iter()
-                    .map(|t| self.termdag.get(*t))
+                    .map(|t| self.termdag.get_term(*t))
                     .collect(),
-                self.termdag.get(*args.last().unwrap()),
+                self.termdag.get_term(*args.last().unwrap()),
             )
         };
 
@@ -280,13 +281,14 @@ impl<'a> ProofChecker<'a> {
                     NormFact::Compute(lhs, NormExpr::Call(op, body)) => {
                         let body_values = body
                             .iter()
-                            .map(|v| self.get_value(&rule_ctx, *v)
-                            .unwrap_or_else(||
-                                panic!("Proof checker detected computation on non-primitive variable {} in computation: {}",
-                                v, NormExpr::Call(*op, body.clone()))))
+                            .map(|v| self.get_value(&rule_ctx, *v))
+                            .collect::<Vec<_>>();
+                        let body_terms = body
+                            .iter()
+                            .map(|v| self.get_term(&rule_ctx, *v))
                             .collect::<Vec<_>>();
                         let (output_value, output_term) =
-                            self.do_compute(*op, &body, &body_values, ctx);
+                            self.do_compute(*op, &body, &body_terms, &body_values, ctx);
                         self.set_term(&mut rule_ctx, *lhs, output_term);
                         self.set_value(&mut rule_ctx, *lhs, output_value);
                     }
@@ -366,30 +368,80 @@ impl<'a> ProofChecker<'a> {
         &self,
         op: Symbol,
         body: &[Symbol],
-        body_values: &[Value],
+        body_terms: &[Term],
+        body_values: &[Option<Value>],
         ctx: CommandId,
     ) -> (Value, Term) {
         let input_types = body
             .iter()
             .map(|v| self.egraph.term_encoded_typeinfo.lookup(ctx, *v).unwrap())
             .collect::<Vec<_>>();
-        let (primitive, output_type) = self
-            .egraph
-            .term_encoded_typeinfo
-            .lookup_primitive(op, &input_types)
-            .unwrap();
-        let output = primitive
-            .apply(body_values, self.egraph)
-            .unwrap_or_else(|| panic!("Proof checking failed- primitive did not return a value"));
 
-        let lit_output = output_type.load_prim(output).unwrap_or_else(|| {
-            panic!(
-                "Cannot convert output of primitive to literal for sort {}",
-                output_type.name(),
-            )
-        });
+        match op.as_str() {
+            "ordering-max" | "ordering-min" => {
+                let body_vals: Vec<Value> = body_terms
+                    .iter()
+                    .map(|t| match self.termdag.get_id(t) {
+                        TermId::Value(v) => v,
+                        _ => panic!("Expected a value in ordering-max"),
+                    })
+                    .collect();
 
-        (output, Term::Lit(lit_output))
+                assert!(body_vals.len() == 2);
+                assert!(input_types.len() == 2);
+                assert!(input_types[0].is_eq_sort());
+                assert!(input_types[0].name() == input_types[1].name());
+                let ((a, aterm), (b, bterm)) = if body_vals[0].bits > body_vals[1].bits {
+                    (
+                        (body_vals[0], body_terms[0].clone()),
+                        (body_vals[1], body_terms[1].clone()),
+                    )
+                } else {
+                    (
+                        (body_vals[1], body_terms[1].clone()),
+                        (body_vals[0], body_terms[0].clone()),
+                    )
+                };
+                if op.as_str() == "ordering-max" {
+                    (a, aterm)
+                } else {
+                    (b, bterm)
+                }
+            }
+            _ => {
+                let (primitive, output_type) = self
+                    .egraph
+                    .term_encoded_typeinfo
+                    .lookup_primitive(op, &input_types)
+                    .unwrap();
+                let body_vals: Vec<Value> = body_values
+                    .iter()
+                    .zip(body_terms)
+                    .map(|(v, term)| {
+                        let unwrapped = v.unwrap();
+                        if let TermId::Value(v) = self.termdag.get_id(term) {
+                            assert!(
+                        v == unwrapped,
+                        "Value computed in proof checking should match value computed in database!"
+                    );
+                        }
+                        unwrapped
+                    })
+                    .collect();
+                let output = primitive.apply(&body_vals, self.egraph).unwrap_or_else(|| {
+                    panic!("Proof checking failed- primitive did not return a value")
+                });
+
+                let lit_output = output_type.load_prim(output).unwrap_or_else(|| {
+                    panic!(
+                        "Cannot convert output of primitive to literal for sort {}",
+                        output_type.name(),
+                    )
+                });
+
+                (output, Term::Lit(lit_output))
+            }
+        }
     }
 
     fn get_term_encoded(&self, name: Symbol) -> &(NormRule, CommandId) {

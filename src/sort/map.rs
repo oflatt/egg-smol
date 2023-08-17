@@ -158,10 +158,10 @@ impl Sort for MapSort {
         for (k, v) in map.iter().rev() {
             let k = egraph.extract(*k, termdag, &self.key).1;
             let v = egraph.extract(*v, termdag, &self.value).1;
-            let children_values = vec![termdag.lookup(&k), termdag.lookup(&v)];
+            let children_values = vec![termdag.get_id(&k), termdag.get_id(&v)];
             let children_terms = children_values
                 .iter()
-                .map(|v| termdag.get(*v))
+                .map(|v| termdag.get_term(*v))
                 .collect::<Vec<_>>();
             // TODO Building terms like this
             // fails to perserve the Value in the termdag

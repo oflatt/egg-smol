@@ -66,7 +66,7 @@ impl TermDag {
 
     // users can't construct a termnode, so just
     // look it up
-    pub fn lookup(&self, node: &Term) -> TermId {
+    pub fn get_id(&self, node: &Term) -> TermId {
         *self.hashcons.get(node).unwrap_or_else(|| {
             panic!(
                 "Term {:?} not found in hashcons. Did you forget to add it?",
@@ -75,7 +75,7 @@ impl TermDag {
         })
     }
 
-    pub fn get(&self, id: TermId) -> Term {
+    pub fn get_term(&self, id: TermId) -> Term {
         self.nodes.get(&id).unwrap().clone()
     }
 
@@ -85,7 +85,7 @@ impl TermDag {
     /// appear in the egraph are used.
     /// This preserves the ordering on terms in the egraph.
     pub fn make(&mut self, sym: Symbol, children: Vec<Term>, egraph: Option<&EGraph>) -> Term {
-        let node = Term::App(sym, children.iter().map(|c| self.lookup(c)).collect());
+        let node = Term::App(sym, children.iter().map(|c| self.get_id(c)).collect());
 
         self.add_node(&node, egraph);
 
@@ -101,9 +101,9 @@ impl TermDag {
     }
 
     pub fn lookup_term(&self, sym: Symbol, children: Vec<Term>) -> Term {
-        let children = children.iter().map(|c| self.lookup(c)).collect::<Vec<_>>();
+        let children = children.iter().map(|c| self.get_id(c)).collect::<Vec<_>>();
         let node = Term::App(sym, children);
-        self.lookup(&node);
+        self.get_id(&node);
         node
     }
 
@@ -185,7 +185,7 @@ impl TermDag {
                 let args = args
                     .iter()
                     .map(|a| {
-                        let term = self.get(*a);
+                        let term = self.get_term(*a);
                         self.term_to_expr(&term)
                     })
                     .collect();
@@ -197,7 +197,7 @@ impl TermDag {
     pub fn to_string(&self, term: &Term) -> String {
         let mut stored = HashMap::<TermId, String>::default();
         let mut seen = HashSet::default();
-        let id = self.lookup(term);
+        let id = self.get_id(term);
         // use a stack to avoid stack overflow
         let mut stack = vec![id];
         while !stack.is_empty() {
