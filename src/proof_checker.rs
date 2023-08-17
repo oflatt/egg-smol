@@ -288,7 +288,7 @@ impl<'a> ProofChecker<'a> {
                             .map(|v| self.get_term(&rule_ctx, *v))
                             .collect::<Vec<_>>();
                         let (output_value, output_term) =
-                            self.do_compute(*op, &body, &body_terms, &body_values, ctx);
+                            self.do_compute(*op, body, &body_terms, &body_values, ctx);
                         self.set_term(&mut rule_ctx, *lhs, output_term);
                         self.set_value(&mut rule_ctx, *lhs, output_value);
                     }
@@ -358,6 +358,8 @@ impl<'a> ProofChecker<'a> {
         }
     }
 
+    /// set the value of a symbol in a rule context
+    /// for use in primitive computations
     fn set_value(&mut self, rule_ctx: &mut RuleContext, sym: Symbol, val: Value) {
         if let Some(existing) = rule_ctx.primitive_bindings.insert(sym, val) {
             assert!(existing == val);
@@ -369,6 +371,8 @@ impl<'a> ProofChecker<'a> {
         op: Symbol,
         body: &[Symbol],
         body_terms: &[Term],
+        // provide values for primitive computations on literals
+        // these are None for terms
         body_values: &[Option<Value>],
         ctx: CommandId,
     ) -> (Value, Term) {
@@ -382,6 +386,8 @@ impl<'a> ProofChecker<'a> {
                 let body_vals: Vec<Value> = body_terms
                     .iter()
                     .map(|t| match self.termdag.get_id(t) {
+                        // Ordering is always called on terms which are in the database,
+                        // so it should be the case that the ids are Values
                         TermId::Value(v) => v,
                         _ => panic!("Expected a value in ordering-max"),
                     })
@@ -418,7 +424,10 @@ impl<'a> ProofChecker<'a> {
                     .iter()
                     .zip(body_terms)
                     .map(|(v, term)| {
-                        let unwrapped = v.unwrap();
+                        // We should have a value for each of the children
+                        let unwrapped = v.unwrap_or_else(|| {
+                            panic!("Expected a value in calculating prim: {:?}", term)
+                        });
                         if let TermId::Value(v) = self.termdag.get_id(term) {
                             assert!(
                         v == unwrapped,
@@ -431,15 +440,8 @@ impl<'a> ProofChecker<'a> {
                 let output = primitive.apply(&body_vals, self.egraph).unwrap_or_else(|| {
                     panic!("Proof checking failed- primitive did not return a value")
                 });
+                let output_term = output_type.make_expr(self.egraph, output, &mut self.termdag);
 
-                let lit_output = output_type.load_prim(output).unwrap_or_else(|| {
-                    panic!(
-                        "Cannot convert output of primitive to literal for sort {}",
-                        output_type.name(),
-                    )
-                });
-
-                let output_term = self.termdag.make_lit(lit_output, Some(self.egraph));
                 (output, output_term)
             }
         }

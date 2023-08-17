@@ -133,8 +133,11 @@ impl TermDag {
                                 _ => panic!("not a value"),
                             })
                             .collect::<Vec<_>>();
-                        let func = egraph.functions.get(sym).unwrap();
-                        func.nodes.get(&children).map(|entry| entry.value)
+                        if let Some(func) = egraph.functions.get(sym) {
+                            func.nodes.get(&children).map(|entry| entry.value)
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
