@@ -98,7 +98,7 @@ impl<'a> ProofChecker<'a> {
                 }
             }
             NormAction::LetLit(lhs, lit) => {
-                let rhs_term = Term::Lit(lit.clone());
+                let rhs_term = self.termdag.make_lit(lit.clone(), Some(self.egraph));
                 self.set_global_term(*lhs, rhs_term)
             }
 
@@ -293,7 +293,7 @@ impl<'a> ProofChecker<'a> {
                         self.set_value(&mut rule_ctx, *lhs, output_value);
                     }
                     NormFact::AssignLit(lhs, lit) => {
-                        let term = Term::Lit(lit.clone());
+                        let term = self.termdag.make_lit(lit.clone(), Some(self.egraph));
                         self.set_term(&mut rule_ctx, *lhs, term.clone());
                     }
                     NormFact::ConstrainEq(_, _) => {}
@@ -365,7 +365,7 @@ impl<'a> ProofChecker<'a> {
     }
 
     fn do_compute(
-        &self,
+        &mut self,
         op: Symbol,
         body: &[Symbol],
         body_terms: &[Term],
@@ -439,7 +439,8 @@ impl<'a> ProofChecker<'a> {
                     )
                 });
 
-                (output, Term::Lit(lit_output))
+                let output_term = self.termdag.make_lit(lit_output, Some(self.egraph));
+                (output, output_term)
             }
         }
     }

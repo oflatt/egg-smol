@@ -140,6 +140,7 @@ fn generate_tests(glob: &str) -> Vec<Trial> {
             "merge_saturates",
             "string_quotes",
             "repro_querybug3",
+            "fusion",
         ];
         if !banned.contains(&name.as_str()) {
             push_trial(Run {
