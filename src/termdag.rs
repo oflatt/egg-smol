@@ -1,16 +1,19 @@
-use std::fmt::{Display, Formatter};
-
 use crate::{
     ast::{Expr, Literal},
     util::{HashMap, HashSet, IndexMap, ListDisplay},
-    Symbol, Value, UNIT_SYM,
+    EGraph, Symbol, Value, UNIT_SYM,
 };
+
+#[derive(Clone, PartialEq, Eq, Debug, Hash, Copy)]
+pub enum TermId {
+    Value(Value),
+    Num(usize),
+}
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Term {
     Lit(Literal),
-    Var(Symbol),
-    App(Symbol, Vec<Value>),
+    App(Symbol, Vec<TermId>),
 }
 
 /// Some functions in egglog are not datatypes
@@ -26,10 +29,11 @@ pub struct FunctionEntry {
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct TermDag {
-    // use the value as the id so that
+    // use the TermId as the id so that
     // the ordering between terms is preserved
-    nodes: IndexMap<Value, Term>,
-    hashcons: IndexMap<Term, Value>,
+    nodes: IndexMap<TermId, Term>,
+    hashcons: IndexMap<Term, TermId>,
+    fresh_id_counter: usize,
 }
 
 #[macro_export]
@@ -62,7 +66,7 @@ impl TermDag {
 
     // users can't construct a termnode, so just
     // look it up
-    pub fn lookup(&self, node: &Term) -> Value {
+    pub fn lookup(&self, node: &Term) -> TermId {
         *self.hashcons.get(node).unwrap_or_else(|| {
             panic!(
                 "Term {:?} not found in hashcons. Did you forget to add it?",
@@ -71,22 +75,27 @@ impl TermDag {
         })
     }
 
-    pub fn get(&self, id: Value) -> Term {
+    pub fn get(&self, id: TermId) -> Term {
         self.nodes.get(&id).unwrap().clone()
     }
 
-    pub fn make(&mut self, sym: Symbol, children: Vec<Term>, value: Value) -> Term {
+    /// Make a term from a symbol and a list of children.
+    /// Optionally, provide an egraph. When an egraph
+    /// is provided, the identifiers of terms which also
+    /// appear in the egraph are used.
+    /// This preserves the ordering on terms in the egraph.
+    pub fn make(&mut self, sym: Symbol, children: Vec<Term>, egraph: Option<&EGraph>) -> Term {
         let node = Term::App(sym, children.iter().map(|c| self.lookup(c)).collect());
 
-        self.add_node(&node, value);
+        self.add_node(&node, egraph);
 
         node
     }
 
-    pub fn make_lit(&mut self, lit: Literal, value: Value) -> Term {
+    pub fn make_lit(&mut self, lit: Literal, egraph: Option<&EGraph>) -> Term {
         let node = Term::Lit(lit);
 
-        self.add_node(&node, value);
+        self.add_node(&node, egraph);
 
         node
     }
@@ -98,17 +107,80 @@ impl TermDag {
         node
     }
 
-    fn add_node(&mut self, node: &Term, value: Value) {
-        if self.hashcons.get(node).is_none() {
-            assert!(self.nodes.insert(value, node.clone()).is_none());
-            self.hashcons.insert(node.clone(), value);
+    fn add_node(&mut self, node: &Term, egraph: Option<&EGraph>) -> TermId {
+        /*if node
+            == &Term::App(
+                "AddT___".into(),
+                vec![Value {
+                    tag: "Expr".into(),
+                    bits: 58,
+                }],
+            )
+        {
+            panic!("here");
+        }*/
+        let egraph_id = if let Some(egraph) = egraph {
+            match node {
+                Term::App(sym, children) => {
+                    if children
+                        .iter()
+                        .all(|child| matches!(child, TermId::Value(_)))
+                    {
+                        let children = children
+                            .iter()
+                            .map(|child| match child {
+                                TermId::Value(v) => *v,
+                                _ => panic!("not a value"),
+                            })
+                            .collect::<Vec<_>>();
+                        let func = egraph.functions.get(sym).unwrap();
+                        func.nodes.get(&children).map(|entry| entry.value)
+                    } else {
+                        None
+                    }
+                }
+                Term::Lit(lit) => Some(egraph.eval_lit(lit)),
+            }
+        } else {
+            None
+        };
+        if let Some(existing) = self.hashcons.get(node) {
+            if let Some(egraph_val) = egraph_id {
+                assert_eq!(
+                    *existing,
+                    TermId::Value(egraph_val),
+                    "Tried to add term {:?} again with different id.",
+                    node
+                );
+            }
+            *existing
+        } else {
+            let new_id = if let Some(egraph_val) = egraph_id {
+                TermId::Value(egraph_val)
+            } else {
+                let id = TermId::Num(self.fresh_id_counter);
+                self.fresh_id_counter += 1;
+                id
+            };
+            let old = self.nodes.insert(new_id, node.clone());
+            self.hashcons.insert(node.clone(), new_id);
+            assert!(
+                old.is_none(),
+                "Tried to add node with duplicate id.\nOld term: {:?}\nNew term: {:?}\n
+                Old: {}\n
+                New: {}\n",
+                old.clone().unwrap(),
+                node,
+                self.to_string(&old.unwrap()),
+                self.to_string(&node),
+            );
+            new_id
         }
     }
 
     pub fn term_to_expr(&mut self, term: &Term) -> Expr {
         match term {
             Term::Lit(lit) => Expr::Lit(lit.clone()),
-            Term::Var(v) => Expr::Var(*v),
             Term::App(op, args) => {
                 let args = args
                     .iter()
@@ -123,7 +195,7 @@ impl TermDag {
     }
 
     pub fn to_string(&self, term: &Term) -> String {
-        let mut stored = HashMap::<Value, String>::default();
+        let mut stored = HashMap::<TermId, String>::default();
         let mut seen = HashSet::default();
         let id = self.lookup(term);
         // use a stack to avoid stack overflow
@@ -151,9 +223,6 @@ impl TermDag {
                 }
                 Term::Lit(lit) => {
                     stored.insert(next, format!("{}", lit));
-                }
-                Term::Var(v) => {
-                    stored.insert(next, format!("{}", v));
                 }
             }
         }

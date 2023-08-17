@@ -154,7 +154,7 @@ impl Sort for MapSort {
             .unwrap()
             .0;
         let empty_val = map_empty.apply(&[], egraph).unwrap();
-        let mut expr = termdag.make("map-empty".into(), vec![], empty_val);
+        let mut expr = termdag.make("map-empty".into(), vec![], Some(egraph));
         for (k, v) in map.iter().rev() {
             let k = egraph.extract(*k, termdag, &self.key).1;
             let v = egraph.extract(*v, termdag, &self.value).1;
@@ -163,8 +163,13 @@ impl Sort for MapSort {
                 .iter()
                 .map(|v| termdag.get(*v))
                 .collect::<Vec<_>>();
-            let new_value = map_insert.apply(&children_values, egraph).unwrap();
-            expr = termdag.make("map-insert".into(), children_terms, new_value);
+            // TODO Building terms like this
+            // fails to perserve the Value in the termdag
+            // to be the same as in the egraph,
+            // potentially causing problems
+            // for checking proofs if containers are ever
+            // eq-able
+            expr = termdag.make("map-insert".into(), children_terms, Some(egraph));
         }
         expr
     }

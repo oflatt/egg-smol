@@ -115,10 +115,14 @@ impl Sort for RationalSort {
         let denom_lit = Literal::Int(denom);
         let numer_val = egraph.eval_lit(&numer_lit);
         let denom_val = egraph.eval_lit(&denom_lit);
-        let numer_term = termdag.make_lit(numer_lit, numer_val);
-        let denom_term = termdag.make_lit(denom_lit, denom_val);
+        let numer_term = termdag.make_lit(numer_lit, Some(egraph));
+        let denom_term = termdag.make_lit(denom_lit, Some(egraph));
 
-        termdag.make("rational".into(), vec![numer_term, denom_term], value)
+        termdag.make(
+            "rational".into(),
+            vec![numer_term, denom_term],
+            Some(egraph),
+        )
     }
 }
 

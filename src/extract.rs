@@ -2,7 +2,7 @@ use hashbrown::hash_map::Entry;
 
 use crate::ast::Symbol;
 use crate::termdag::{Term, TermDag};
-use crate::util::HashMap;
+use crate::util::{HashMap, HashSet};
 use crate::{ArcSort, EGraph, Function, Id, Value};
 
 type Cost = usize;
@@ -110,7 +110,7 @@ impl<'a> Extractor<'a> {
             children.push(self.find_best(*value, termdag, &arcsort).1)
         }
 
-        termdag.make(node.sym, children, value)
+        termdag.make(node.sym, children, Some(self.egraph))
     }
 
     fn find(&self, value: Value) -> Id {
@@ -181,18 +181,21 @@ impl<'a> Extractor<'a> {
 
     fn find_costs(&mut self, termdag: &mut TermDag) {
         let mut did_something = true;
+
         while did_something {
             did_something = false;
 
             for sym in self.ctors.clone() {
                 let func = &self.egraph.functions[&sym];
+                let mut input_hash = HashSet::default();
                 if func.schema.output.is_eq_sort() {
                     for (inputs, output) in func.nodes.iter() {
+                        assert!(input_hash.insert(inputs.to_vec()));
                         if let Some((term_inputs, new_cost)) =
                             self.node_total_cost(func, inputs, termdag)
                         {
                             let make_new_pair =
-                                || (new_cost, termdag.make(sym, term_inputs, output.value));
+                                || (new_cost, termdag.make(sym, term_inputs, Some(self.egraph)));
 
                             let id = self.find(output.value);
                             match self.costs.entry(id) {
