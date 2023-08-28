@@ -12,7 +12,6 @@ pub(crate) struct ProofChecker<'a> {
 
 struct RuleContext {
     bindings: HashMap<Symbol, Term>,
-    primitive_bindings: HashMap<Symbol, Value>,
 }
 
 impl<'a> ProofChecker<'a> {
@@ -69,18 +68,13 @@ impl<'a> ProofChecker<'a> {
                     .lookup_func(*op, input_types)
                     .unwrap();
                 if func_type.is_primitive {
-                    let body_values = body
-                        .iter()
-                        .map(|v| self.get_global_value(*v))
-                        .collect::<Vec<_>>();
                     let body_terms = body
                         .iter()
                         .map(|v| self.get_global_term(*v))
                         .collect::<Vec<_>>();
-                    let (output_value, output_term) =
-                        self.do_compute(*op, body, &body_terms, &body_values, id);
+                    let term = self.termdag.make(*op, body_terms, None);
+                    let (_output_value, output_term) = self.do_compute(term);
                     self.set_global_term(*lhs, output_term);
-                    self.set_global_value(*lhs, output_value);
                 } else {
                     let body_terms = body
                         .iter()
@@ -236,11 +230,10 @@ impl<'a> ProofChecker<'a> {
         if name.contains("-merge-fn__") {
             // TODO check merge function proofs
         } else {
-            let (rule, ctx) = self.get_term_encoded(name.into()).clone();
+            let (rule, _ctx) = self.get_term_encoded(name.into()).clone();
             let mut current_atom = 0;
             let mut rule_ctx = RuleContext {
                 bindings: HashMap::default(),
-                primitive_bindings: HashMap::default(),
             };
 
             let num_atoms = rule
@@ -273,24 +266,15 @@ impl<'a> ProofChecker<'a> {
                     NormFact::AssignVar(lhs, rhs) => {
                         let rhs_binding = self.get_term(&rule_ctx, *rhs);
                         self.set_term(&mut rule_ctx, *lhs, rhs_binding);
-
-                        if let Some(rhs_value) = self.get_value(&rule_ctx, *rhs) {
-                            self.set_value(&mut rule_ctx, *lhs, rhs_value)
-                        }
                     }
                     NormFact::Compute(lhs, NormExpr::Call(op, body)) => {
-                        let body_values = body
-                            .iter()
-                            .map(|v| self.get_value(&rule_ctx, *v))
-                            .collect::<Vec<_>>();
                         let body_terms = body
                             .iter()
                             .map(|v| self.get_term(&rule_ctx, *v))
                             .collect::<Vec<_>>();
-                        let (output_value, output_term) =
-                            self.do_compute(*op, body, &body_terms, &body_values, ctx);
+                        let call_term = self.termdag.make(*op, body_terms.clone(), None);
+                        let (_output_value, output_term) = self.do_compute(call_term);
                         self.set_term(&mut rule_ctx, *lhs, output_term);
-                        self.set_value(&mut rule_ctx, *lhs, output_value);
                     }
                     NormFact::AssignLit(lhs, lit) => {
                         let term = self.termdag.make_lit(lit.clone(), Some(self.egraph));
@@ -341,45 +325,25 @@ impl<'a> ProofChecker<'a> {
             .clone()
     }
 
-    fn get_value(&self, rule_ctx: &RuleContext, sym: Symbol) -> Option<Value> {
-        rule_ctx
-            .primitive_bindings
-            .get(&sym)
-            .or(self.global_primitives.get(&sym))
-            .cloned()
-    }
-
     fn set_term(&mut self, rule_ctx: &mut RuleContext, sym: Symbol, term: Term) {
         assert!(rule_ctx.bindings.insert(sym, term.clone()).is_none());
-        if let Term::Lit(l) = term {
-            rule_ctx
-                .primitive_bindings
-                .insert(sym, self.egraph.eval_lit(&l));
-        }
     }
 
-    /// set the value of a symbol in a rule context
-    /// for use in primitive computations
-    fn set_value(&mut self, rule_ctx: &mut RuleContext, sym: Symbol, val: Value) {
-        if let Some(existing) = rule_ctx.primitive_bindings.insert(sym, val) {
-            assert!(existing == val);
-        }
-    }
-
-    fn do_compute(
-        &mut self,
-        op: Symbol,
-        body: &[Symbol],
-        body_terms: &[Term],
-        // provide values for primitive computations on literals
-        // these are None for terms
-        body_values: &[Option<Value>],
-        ctx: CommandId,
-    ) -> (Value, Term) {
-        let input_types = body
-            .iter()
-            .map(|v| self.egraph.term_encoded_typeinfo.lookup(ctx, *v).unwrap())
-            .collect::<Vec<_>>();
+    // compute a primitive
+    // special logic for ordering-max and ordering-min
+    fn do_compute(&mut self, term: Term) -> (Value, Term) {
+        let (op, body_terms) = match term.clone() {
+            Term::App(op, body) => (
+                op,
+                body.iter()
+                    .map(|v| self.termdag.get_term(*v))
+                    .collect::<Vec<_>>(),
+            ),
+            Term::Lit(lit) => {
+                let value = self.egraph.eval_lit(&lit);
+                return (value, term);
+            }
+        };
 
         match op.as_str() {
             "ordering-max" | "ordering-min" => {
@@ -394,56 +358,63 @@ impl<'a> ProofChecker<'a> {
                     .collect();
 
                 assert!(body_vals.len() == 2);
-                assert!(input_types.len() == 2);
-                assert!(input_types[0].is_eq_sort());
-                assert!(input_types[0].name() == input_types[1].name());
-                let ((a, aterm), (b, bterm)) = if body_vals[0].bits > body_vals[1].bits {
-                    (
-                        (body_vals[0], body_terms[0].clone()),
-                        (body_vals[1], body_terms[1].clone()),
-                    )
+                let (a, b) = if body_vals[0].bits > body_vals[1].bits {
+                    (0, 1)
                 } else {
-                    (
-                        (body_vals[1], body_terms[1].clone()),
-                        (body_vals[0], body_terms[0].clone()),
-                    )
+                    (1, 0)
                 };
                 if op.as_str() == "ordering-max" {
-                    (a, aterm)
+                    (body_vals[a], body_terms[a].clone())
                 } else {
-                    (b, bterm)
+                    (body_vals[b], body_terms[b].clone())
                 }
             }
             _ => {
+                let input_types = body_terms
+                    .iter()
+                    .map(|v| self.typecheck_literal_term(v.clone()))
+                    .collect::<Vec<_>>();
                 let (primitive, output_type) = self
                     .egraph
                     .term_encoded_typeinfo
                     .lookup_primitive(op, &input_types)
                     .unwrap();
-                let body_vals: Vec<Value> = body_values
+                let body_vals: Vec<Value> = body_terms
                     .iter()
-                    .zip(body_terms)
-                    .map(|(v, term)| {
-                        // We should have a value for each of the children
-                        let unwrapped = v.unwrap_or_else(|| {
-                            panic!("Expected a value in calculating prim: {:?}", term)
-                        });
-                        if let TermId::Value(v) = self.termdag.get_id(term) {
-                            assert!(
-                        v == unwrapped,
-                        "Value computed in proof checking should match value computed in database!"
-                    );
-                        }
-                        unwrapped
+                    .map(|term| {
+                        // We may not have a value for children, compute it
+                        self.do_compute(term.clone()).0
                     })
-                    .collect();
+                    .collect::<Vec<_>>();
                 let output = primitive.apply(&body_vals, self.egraph).unwrap_or_else(|| {
                     panic!("Proof checking failed- primitive did not return a value")
                 });
+
                 let output_term = output_type.make_expr(self.egraph, output, &mut self.termdag);
 
                 (output, output_term)
             }
+        }
+    }
+
+    fn typecheck_literal_term(&self, term: Term) -> ArcSort {
+        match term {
+            Term::Lit(lit) => self.egraph.term_encoded_typeinfo.infer_literal(&lit),
+            Term::App(op, body) => {
+                let (_prim, output_type) = self
+                    .egraph
+                    .term_encoded_typeinfo
+                    .lookup_primitive(
+                        op,
+                        &body
+                            .iter()
+                            .map(|v| self.typecheck_literal_term(self.termdag.get_term(*v)))
+                            .collect::<Vec<_>>(),
+                    )
+                    .unwrap_or_else(|| panic!("Expected a primitive. Got: {:?}", op));
+                output_type
+            }
+            _ => panic!("Expected a literal term"),
         }
     }
 
