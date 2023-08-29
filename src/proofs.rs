@@ -87,6 +87,10 @@ impl ProofState {
         res
     }
 
+    /// Get the proof for this expression
+    /// with a particular output.
+    /// If we are not in a rule, we can just look up
+    /// the output and so it is None
     fn get_proof(&self, expr: &NormExpr, output: Option<Symbol>) -> String {
         let term = self.get_term(expr, output);
         let proof_func = self.proof_func_name();
@@ -109,6 +113,9 @@ impl ProofState {
         format!("({term_name} {var})", term_name = term_name, var = var)
     }
 
+    /// Construct the term for this expression.
+    /// If we are in a global context, we don't need
+    /// the result (we can look it up safely).
     fn get_term(&self, expr: &NormExpr, result: Option<Symbol>) -> String {
         let expr_type = self.type_info.lookup_expr(self.current_ctx, expr).unwrap();
         let NormExpr::Call(head, children) = expr;
@@ -123,11 +130,6 @@ impl ProofState {
             // put the input and look up the output
             format!("({term_name} {input_str} {output})")
         } else {
-            assert!(
-                result.is_none(),
-                "Non-merge terms should not have results. Got: {}",
-                expr
-            );
             let term_name = self.term_func_name(*head);
             format!("({term_name} {expr})")
         }
@@ -195,7 +197,7 @@ impl ProofState {
 
     fn fact_proof(&self, fact: &NormFact) -> Option<String> {
         match fact {
-            NormFact::Assign(_lhs, expr) => Some(self.get_proof(expr, None)),
+            NormFact::Assign(lhs, expr) => Some(self.get_proof(expr, Some(*lhs))),
             _ => None,
         }
     }

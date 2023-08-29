@@ -1,0 +1,39 @@
+
+;; (+ x 2) = (+ (+ x 2) 0)
+
+(RuleProof "(rule ((= addx2 addx20))
+          ((v579))
+             )"
+(ProofCons  
+  (Original  
+    (Math_ParentT
+      (Add (Var "x") (Const (rational 2 1))) ;; also known as v595, also known as addx2
+      (Add (Var "x") (Const (rational 2 1))) ;; v596
+      ))
+  
+(ProofCons
+
+  (RuleProof
+    ;; the rule being used:
+    "add0"
+    ;; proving the rule matched:
+    (ProofCons
+      (Original (MathT (Add (Var "x") (Const (rational 2 1)))))
+    (ProofCons
+      (Original (Math_ParentT (Var "x") (Var "x")))
+    (ProofCons
+      (Original (Math_ParentT (Const (rational 2 1)) (Const (rational 2 1))))
+    (ProofNull))))
+  
+  ;; the term being proved by the rewrite:
+  (Math_ParentT
+     (Add (Add (Var "x") (Const (rational 2 1)))
+          (Const (rational 0 1)))
+     (Add (Var "x") (Const (rational 2 1))))
+     
+     )
+
+
+(ProofNull)))
+
+(v578T (v579)))

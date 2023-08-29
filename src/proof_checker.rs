@@ -128,7 +128,6 @@ impl<'a> ProofChecker<'a> {
                         self.termdag.get_term(children[2]),
                     );
                     self.termdag.get_term(children[2])
-                    // TODO check the rule proof
                 } else {
                     panic!("Unrecognized proof type: {}", op);
                 }
@@ -280,7 +279,17 @@ impl<'a> ProofChecker<'a> {
                         let term = self.termdag.make_lit(lit.clone(), Some(self.egraph));
                         self.set_term(&mut rule_ctx, *lhs, term.clone());
                     }
-                    NormFact::ConstrainEq(_, _) => {}
+                    NormFact::ConstrainEq(var_a, var_b) => {
+                        assert_eq!(
+                            self.get_term(&rule_ctx, *var_a),
+                            self.get_term(&rule_ctx, *var_b),
+                            "Expected terms to be equal in rule proof: {} != {} with variables {} and {}",
+                            self.termdag.to_string(&self.get_term(&rule_ctx, *var_a)),
+                            self.termdag.to_string(&self.get_term(&rule_ctx, *var_b)),
+                            var_a,
+                            var_b
+                        );
+                    }
                 }
             }
 
@@ -395,7 +404,10 @@ impl<'a> ProofChecker<'a> {
                     })
                     .collect::<Vec<_>>();
                 let output = primitive.apply(&body_vals, self.egraph).unwrap_or_else(|| {
-                    panic!("Proof checking failed- primitive did not return a value")
+                    panic!(
+                        "Proof checking failed- primitive did not return a value. Primitive term: {}",
+                        self.termdag.to_string(&term)
+                    )
                 });
 
                 let output_term = output_type.make_expr(self.egraph, output, &mut self.termdag);
