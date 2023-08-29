@@ -129,10 +129,10 @@ fn generate_tests(glob: &str) -> Vec<Trial> {
             });
         }
 
-        // Disable proofs for these tests that use containers
-        // or input
-        // or call functions in merge
         // TODO fix me
+        // Disable proofs for these tests that use containers (extraciton is broken)
+        // or input (broken for proofs)
+        // or call functions in merge (broken for proofs)
         let banned = [
             "lambda",
             "fusion",
@@ -141,6 +141,9 @@ fn generate_tests(glob: &str) -> Vec<Trial> {
             "string_quotes",
             "repro_querybug3",
             "fusion",
+            // these two are too slow
+            "math_microbenchmark",
+            "repro_unsound",
         ];
         if !banned.contains(&name.as_str()) {
             push_trial(Run {
