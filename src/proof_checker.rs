@@ -369,6 +369,14 @@ impl<'a> ProofChecker<'a> {
                     (body_vals[b], body_terms[b].clone())
                 }
             }
+            "!=" => {
+                assert!(body_terms.len() == 2);
+                assert!(body_terms[0] != body_terms[1]);
+                (
+                    self.egraph.eval_lit(&Literal::Unit),
+                    self.termdag.make_lit(Literal::Unit, None),
+                )
+            }
             _ => {
                 let input_types = body_terms
                     .iter()

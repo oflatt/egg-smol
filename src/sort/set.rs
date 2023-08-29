@@ -139,29 +139,12 @@ impl Sort for SetSort {
 
     fn make_expr(&self, egraph: &EGraph, value: Value, termdag: &mut TermDag) -> Term {
         let set = ValueSet::load(self, &value);
-        let set_empty = egraph
-            .proof_state
-            .type_info
-            .lookup_primitive("set-empty".into(), &[]);
-        let set_insert = egraph.proof_state.type_info.lookup_primitive(
-            "set-insert".into(),
-            &[
-                Arc::new(Self {
-                    name: self.name,
-                    element: self.element.clone(),
-                    sets: Default::default(),
-                }),
-                self.element.clone(),
-            ],
-        );
-        todo!("make expr for set");
-        /*let mut expr = Expr::call("set-empty", []);
-        let mut termdag = TermDag::default();
+        let mut expr = termdag.make("set-empty".into(), vec![], Some(egraph));
         for e in set.iter().rev() {
-            let e = egraph.extract(*e, &mut termdag, &self.element).1;
-            expr = Expr::call("set-insert", [expr, termdag.term_to_expr(&e)])
+            let e = egraph.extract(*e, termdag, &self.element).1;
+            expr = termdag.make("set-insert".into(), vec![expr, e], Some(egraph));
         }
-        expr*/
+        expr
     }
 }
 

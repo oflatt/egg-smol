@@ -130,30 +130,6 @@ impl Sort for MapSort {
 
     fn make_expr(&self, egraph: &EGraph, value: Value, termdag: &mut TermDag) -> Term {
         let map = ValueMap::load(self, &value);
-        let map_empty = egraph
-            .proof_state
-            .type_info
-            .lookup_primitive("map-empty".into(), &[])
-            .unwrap()
-            .0;
-        let map_insert = egraph
-            .proof_state
-            .type_info
-            .lookup_primitive(
-                "map-insert".into(),
-                &[
-                    Arc::new(Self {
-                        name: self.name,
-                        key: self.key.clone(),
-                        value: self.value.clone(),
-                        maps: Default::default(),
-                    }),
-                    self.value.clone(),
-                ],
-            )
-            .unwrap()
-            .0;
-        let empty_val = map_empty.apply(&[], egraph).unwrap();
         let mut expr = termdag.make("map-empty".into(), vec![], Some(egraph));
         for (k, v) in map.iter().rev() {
             let k = egraph.extract(*k, termdag, &self.key).1;
