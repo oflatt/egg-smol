@@ -174,8 +174,8 @@ impl TermDag {
                 New: {}\n",
                 old.clone().unwrap(),
                 node,
-                self.to_string(&old.unwrap()),
-                self.to_string(&node),
+                self.to_string(&old.unwrap(), true),
+                self.to_string(&node, true),
             );
             new_id
         }
@@ -197,40 +197,45 @@ impl TermDag {
         }
     }
 
-    pub fn to_string(&self, term: &Term) -> String {
-        let mut stored = HashMap::<TermId, String>::default();
-        let mut seen = HashSet::default();
-        let id = self.get_id(term);
-        // use a stack to avoid stack overflow
-        let mut stack = vec![id];
-        while !stack.is_empty() {
-            let next = stack.pop().unwrap();
+    pub fn to_string(&self, term: &Term, tree: bool) -> String {
+        if tree {
+            let mut stored = HashMap::<TermId, String>::default();
+            let mut seen = HashSet::default();
+            let id = self.get_id(term);
+            // use a stack to avoid stack overflow
+            let mut stack = vec![id];
+            while !stack.is_empty() {
+                let next = stack.pop().unwrap();
 
-            match self.nodes.get(&next).unwrap().clone() {
-                Term::App(name, children) => {
-                    if seen.contains(&next) {
-                        let mut str = String::new();
-                        str.push_str(&format!("({}", name));
-                        for c in children.iter() {
-                            str.push_str(&format!(" {}", stored[c]));
-                        }
-                        str.push(')');
-                        stored.insert(next, str);
-                    } else {
-                        seen.insert(next);
-                        stack.push(next);
-                        for c in children.iter().rev() {
-                            stack.push(*c);
+                match self.nodes.get(&next).unwrap().clone() {
+                    Term::App(name, children) => {
+                        if seen.contains(&next) {
+                            let mut str = String::new();
+                            str.push_str(&format!("({}", name));
+                            for c in children.iter() {
+                                str.push_str(&format!(" {}", stored[c]));
+                            }
+                            str.push(')');
+                            stored.insert(next, str);
+                        } else {
+                            seen.insert(next);
+                            stack.push(next);
+                            for c in children.iter().rev() {
+                                stack.push(*c);
+                            }
                         }
                     }
-                }
-                Term::Lit(lit) => {
-                    stored.insert(next, format!("{}", lit));
+                    Term::Lit(lit) => {
+                        stored.insert(next, format!("{}", lit));
+                    }
                 }
             }
-        }
 
-        stored.get(&id).unwrap().clone()
+            stored.get(&id).unwrap().clone()
+        } else {
+            // TODO
+            String::new()
+        }
     }
 
     pub fn display_entry(&self, entry: &FunctionEntry) -> String {
@@ -238,14 +243,14 @@ impl TermDag {
             format!(
                 "({} {})",
                 entry.name,
-                ListDisplay(entry.inputs.iter().map(|t| self.to_string(t)), " "),
+                ListDisplay(entry.inputs.iter().map(|t| self.to_string(t, true)), " "),
             )
         } else {
             format!(
                 "({} {}) -> {}",
                 entry.name,
-                ListDisplay(entry.inputs.iter().map(|t| self.to_string(t)), " "),
-                self.to_string(&entry.output)
+                ListDisplay(entry.inputs.iter().map(|t| self.to_string(t, true)), " "),
+                self.to_string(&entry.output, true)
             )
         }
     }

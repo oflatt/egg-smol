@@ -993,7 +993,7 @@ impl EGraph {
                 for expr in exprs {
                     use std::io::Write;
                     let res = self.extract_expr(expr, 1)?;
-                    writeln!(f, "{}", res.termdag.to_string(&res.expr))
+                    writeln!(f, "{}", res.termdag.to_string(&res.expr, true))
                         .map_err(|e| Error::IoError(filename.clone(), e))?;
                 }
 
@@ -1013,7 +1013,7 @@ impl EGraph {
     pub fn term_to_string(&mut self, term: Value) -> String {
         let mut termdag = TermDag::default();
         let (_cost, expr) = self.print(term, &mut termdag, &self.get_sort(&term).unwrap());
-        termdag.to_string(&expr)
+        termdag.to_string(&expr, true)
     }
 
     // Extract an expression from the current state, returning the cost, the extracted expression and some number

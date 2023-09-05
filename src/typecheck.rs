@@ -906,7 +906,10 @@ impl EGraph {
                                 .name_to_sort(&values[0].tag)
                                 .unwrap(),
                         );
-                        log::info!("extracted with cost {cost}: {}", termdag.to_string(&expr));
+                        log::info!(
+                            "extracted with cost {cost}: {}",
+                            termdag.to_string(&expr, true)
+                        );
                     } else {
                         if variants < 0 {
                             panic!("Cannot extract negative number of variants");
@@ -915,7 +918,7 @@ impl EGraph {
                             self.extract_variants(values[0], variants as usize, &mut termdag);
                         log::info!("extracted variants:");
                         for expr in extracted {
-                            log::info!("   {}", termdag.to_string(&expr));
+                            log::info!("   {}", termdag.to_string(&expr, true));
                         }
                     }
 

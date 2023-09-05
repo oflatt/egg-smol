@@ -159,7 +159,7 @@ impl EGraph {
                     } else {
                         let mut termdag = TermDag::default();
                         let term = sort.make_expr(self, *value, &mut termdag);
-                        termdag.to_string(&term)
+                        termdag.to_string(&term, true)
                     };
                     egraph.nodes.insert(
                         node_id.clone(),
