@@ -483,9 +483,9 @@ impl<'a> ActionChecker<'a> {
                 self.instructions.push(Instruction::Extract(2));
                 Ok(())
             }
-            Action::Print(expr) => {
+            Action::Print(expr, print_tree) => {
                 let (_, _ty) = self.infer_expr(expr)?;
-                self.instructions.push(Instruction::Print);
+                self.instructions.push(Instruction::Print(*print_tree));
                 Ok(())
             }
             Action::Delete(f, args) => {
@@ -670,7 +670,7 @@ enum Instruction {
     Set(Symbol),
     Union(usize),
     Extract(usize),
-    Print,
+    Print(bool),
     Panic(String),
     Pop,
 }
@@ -785,7 +785,7 @@ impl EGraph {
                             _ => {
                                 let terms = values
                                     .iter()
-                                    .map(|v| self.term_to_string(*v))
+                                    .map(|v| self.term_to_string(*v, &true))
                                     .collect::<Vec<String>>();
                                 return Err(Error::NotFoundError(NotFoundError(Expr::Var(
                                     format!(
@@ -800,7 +800,7 @@ impl EGraph {
                     } else {
                         let terms = values
                             .iter()
-                            .map(|v| self.term_to_string(*v))
+                            .map(|v| self.term_to_string(*v, &true))
                             .collect::<Vec<String>>();
                         return Err(Error::NotFoundError(NotFoundError(Expr::Var(
                             format!(
@@ -882,9 +882,9 @@ impl EGraph {
                 Instruction::Union(_arity) => {
                     panic!("term encoding gets rid of union");
                 }
-                Instruction::Print => {
+                Instruction::Print(print_tree) => {
                     let to_print = stack.pop().unwrap();
-                    let extracted = self.term_to_string(to_print);
+                    let extracted = self.term_to_string(to_print, print_tree);
                     log::info!("printing: {}", extracted);
                 }
                 Instruction::Extract(arity) => {
@@ -908,7 +908,7 @@ impl EGraph {
                         );
                         log::info!(
                             "extracted with cost {cost}: {}",
-                            termdag.to_string(&expr, true)
+                            termdag.to_string(&expr, &true)
                         );
                     } else {
                         if variants < 0 {
@@ -918,7 +918,7 @@ impl EGraph {
                             self.extract_variants(values[0], variants as usize, &mut termdag);
                         log::info!("extracted variants:");
                         for expr in extracted {
-                            log::info!("   {}", termdag.to_string(&expr, true));
+                            log::info!("   {}", termdag.to_string(&expr, &true));
                         }
                     }
 

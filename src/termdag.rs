@@ -174,8 +174,8 @@ impl TermDag {
                 New: {}\n",
                 old.clone().unwrap(),
                 node,
-                self.to_string(&old.unwrap(), true),
-                self.to_string(&node, true),
+                self.to_string(&old.unwrap(), &true),
+                self.to_string(&node, &true),
             );
             new_id
         }
@@ -197,8 +197,8 @@ impl TermDag {
         }
     }
 
-    pub fn to_string(&self, term: &Term, tree: bool) -> String {
-        if tree {
+    pub fn to_string(&self, term: &Term, print_tree: &bool) -> String {
+        if *print_tree {
             let mut stored = HashMap::<TermId, String>::default();
             let mut seen = HashSet::default();
             let id = self.get_id(term);
@@ -234,6 +234,8 @@ impl TermDag {
             stored.get(&id).unwrap().clone()
         } else {
             // TODO
+            let mut stored = HashMap::<TermId, String>::default();
+
             String::new()
         }
     }
@@ -243,14 +245,14 @@ impl TermDag {
             format!(
                 "({} {})",
                 entry.name,
-                ListDisplay(entry.inputs.iter().map(|t| self.to_string(t, true)), " "),
+                ListDisplay(entry.inputs.iter().map(|t| self.to_string(t, &true)), " "),
             )
         } else {
             format!(
                 "({} {}) -> {}",
                 entry.name,
-                ListDisplay(entry.inputs.iter().map(|t| self.to_string(t, true)), " "),
-                self.to_string(&entry.output, true)
+                ListDisplay(entry.inputs.iter().map(|t| self.to_string(t, &true)), " "),
+                self.to_string(&entry.output, &true)
             )
         }
     }

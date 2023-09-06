@@ -113,7 +113,7 @@ NonLetAction: Action = {
     LParen "panic" <msg:String> RParen => Action::Panic(msg),
     LParen "extract" <expr:Expr> RParen => Action::Extract(expr, Expr::Lit(Literal::Int(0))),
     LParen "extract" <expr:Expr> <variants:Expr> RParen => Action::Extract(expr, variants),
-    LParen "print" <expr:Expr> RParen => Action::Print(expr),
+    LParen "print" <expr:Expr> <print_tree:":dag"?> RParen => Action::Print(expr, !print_tree.is_some()),
     <e:CallExpr> => Action::Expr(e),
 }
 
