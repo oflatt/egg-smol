@@ -636,7 +636,7 @@ pub(crate) fn desugar_command(
             vec![NCommand::Check(flatten_facts(&facts, desugar))]
         }
         Command::CheckProof => vec![NCommand::CheckProof],
-        Command::GetProof(query) => desugar.desugar_get_proof(&query)?,
+        Command::GetProof(query, print_tree) => desugar.desugar_get_proof(&query)?,
         Command::LookupProof(expr) => match &expr {
             Expr::Call(f, args) => {
                 if !args.is_empty() {

@@ -116,7 +116,7 @@ pub enum NCommand {
         name: Symbol,
         file: String,
     },
-    GetProof(Vec<NormFact>),
+    GetProof(Vec<NormFact>, bool),
     LookupProof(NormExpr),
 }
 
@@ -151,9 +151,10 @@ impl NCommand {
                 Command::Check(facts.iter().map(|fact| fact.to_fact()).collect())
             }
             NCommand::CheckProof => Command::CheckProof,
-            NCommand::GetProof(query) => {
-                Command::GetProof(query.iter().map(|fact| fact.to_fact()).collect::<Vec<_>>())
-            }
+            NCommand::GetProof(query, print_tree) => Command::GetProof(
+                query.iter().map(|fact| fact.to_fact()).collect::<Vec<_>>(),
+                *print_tree,
+            ),
             NCommand::LookupProof(expr) => Command::LookupProof(expr.to_expr()),
             NCommand::PrintTable(name, n) => Command::PrintTable(*name, *n),
             NCommand::PrintSize(name) => Command::PrintSize(*name),
@@ -196,9 +197,10 @@ impl NCommand {
                 NCommand::Check(facts.iter().map(|fact| fact.map_exprs(f)).collect())
             }
             NCommand::CheckProof => NCommand::CheckProof,
-            NCommand::GetProof(query) => {
-                NCommand::GetProof(query.iter().map(|fact| fact.map_exprs(f)).collect())
-            }
+            NCommand::GetProof(query, print_tree) => NCommand::GetProof(
+                query.iter().map(|fact| fact.map_exprs(f)).collect(),
+                *print_tree,
+            ),
             NCommand::LookupProof(expr) => NCommand::LookupProof(f(expr)),
             NCommand::PrintTable(name, n) => NCommand::PrintTable(*name, *n),
             NCommand::PrintSize(name) => NCommand::PrintSize(*name),
@@ -368,7 +370,7 @@ pub enum Command {
     // TODO: this could just become an empty query
     Check(Vec<Fact>),
     CheckProof,
-    GetProof(Vec<Fact>),
+    GetProof(Vec<Fact>, bool),
     LookupProof(Expr),
     PrintTable(Symbol, usize),
     PrintSize(Symbol),
@@ -410,7 +412,12 @@ impl ToSexp for Command {
             Command::Extract { variants, fact } => list!("extract", ":variants", variants, fact),
             Command::Check(facts) => list!("check", ++ facts),
             Command::CheckProof => list!("check-proof"),
-            Command::GetProof(query) => list!("get-proof", ++ query),
+            Command::GetProof(query, print_tree) => {
+                list!(
+                    list!("get-proof", ++ query),
+                    if *print_tree { "" } else { ":dag" }
+                )
+            }
             Command::LookupProof(expr) => list!("lookup-proof", expr),
             Command::Push(n) => list!("push", n),
             Command::Pop(n) => list!("pop", n),
