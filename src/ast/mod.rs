@@ -117,7 +117,7 @@ pub enum NCommand {
         file: String,
     },
     GetProof(Vec<NormFact>, bool),
-    LookupProof(NormExpr),
+    LookupProof(NormExpr, bool),
 }
 
 impl NormCommand {
@@ -155,7 +155,7 @@ impl NCommand {
                 query.iter().map(|fact| fact.to_fact()).collect::<Vec<_>>(),
                 *print_tree,
             ),
-            NCommand::LookupProof(expr) => Command::LookupProof(expr.to_expr()),
+            NCommand::LookupProof(expr, print_tree) => Command::LookupProof(expr.to_expr(), *print_tree),
             NCommand::PrintTable(name, n) => Command::PrintTable(*name, *n),
             NCommand::PrintSize(name) => Command::PrintSize(*name),
             NCommand::Output { file, exprs } => Command::Output {
@@ -201,7 +201,7 @@ impl NCommand {
                 query.iter().map(|fact| fact.map_exprs(f)).collect(),
                 *print_tree,
             ),
-            NCommand::LookupProof(expr) => NCommand::LookupProof(f(expr)),
+            NCommand::LookupProof(expr, print_tree) => NCommand::LookupProof(f(expr), *print_tree),
             NCommand::PrintTable(name, n) => NCommand::PrintTable(*name, *n),
             NCommand::PrintSize(name) => NCommand::PrintSize(*name),
             NCommand::Output { file, exprs } => NCommand::Output {
@@ -371,7 +371,7 @@ pub enum Command {
     Check(Vec<Fact>),
     CheckProof,
     GetProof(Vec<Fact>, bool),
-    LookupProof(Expr),
+    LookupProof(Expr, bool),
     PrintTable(Symbol, usize),
     PrintSize(Symbol),
     Input {
@@ -418,7 +418,7 @@ impl ToSexp for Command {
                     if *print_tree { "" } else { ":dag" }
                 )
             }
-            Command::LookupProof(expr) => list!("lookup-proof", expr),
+            Command::LookupProof(expr, print_tree) => list!("lookup-proof", expr, if *print_tree { "" } else { ":dag" }),
             Command::Push(n) => list!("push", n),
             Command::Pop(n) => list!("pop", n),
             Command::PrintTable(name, n) => list!("print-table", name, n),

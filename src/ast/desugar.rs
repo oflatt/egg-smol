@@ -636,13 +636,13 @@ pub(crate) fn desugar_command(
             vec![NCommand::Check(flatten_facts(&facts, desugar))]
         }
         Command::CheckProof => vec![NCommand::CheckProof],
-        Command::GetProof(query, print_tree) => desugar.desugar_get_proof(&query)?,
-        Command::LookupProof(expr) => match &expr {
+        Command::GetProof(query, print_tree) => desugar.desugar_get_proof(&query, print_tree)?,
+        Command::LookupProof(expr, print_tree) => match &expr {
             Expr::Call(f, args) => {
                 if !args.is_empty() {
                     return Err(Error::LookupProofRequiresExpr(expr.to_string()));
                 }
-                vec![NCommand::LookupProof(NormExpr::Call(*f, vec![]))]
+                vec![NCommand::LookupProof(NormExpr::Call(*f, vec![]), print_tree)]
             }
             _ => {
                 return Err(Error::LookupProofRequiresExpr(expr.to_string()));
@@ -851,11 +851,12 @@ impl Desugar {
         res
     }
 
-    fn desugar_get_proof(&mut self, query: &Vec<Fact>) -> Result<Vec<NCommand>, Error> {
+    fn desugar_get_proof(&mut self, query: &Vec<Fact>, print_tree: bool) -> Result<Vec<NCommand>, Error> {
         let proof_ruleset = self.fresh().as_str();
         let result_sort = self.fresh().as_str();
         let result_func = self.fresh().as_str();
         let query_str = ListDisplay(query, " ");
+        let tree_or_dag = if print_tree { "" } else { ":dag" };
         desugar_commands(
             self.parse_program(&format!(
                 "
@@ -867,7 +868,7 @@ impl Desugar {
               (({result_func}))
               :ruleset {proof_ruleset})
         (run {proof_ruleset} 1)
-        (lookup-proof ({result_func}))
+        (lookup-proof ({result_func} {tree_or_dag}))
         ",
             ))
             .unwrap(),
