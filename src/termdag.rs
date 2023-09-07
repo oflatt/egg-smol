@@ -197,8 +197,16 @@ impl TermDag {
         }
     }
 
+    fn term_id_to_string(&self, val: &TermId) -> String {
+        match val {
+            TermId::Value(v) => format!("Value tag: {} Value bits: {}", v.tag, v.bits),
+            TermId::Num(n) => format!("Term Num: {}", n),
+        }
+    }
+
     pub fn to_string(&self, term: &Term, print_tree: &bool) -> String {
         if *print_tree {
+            // Tree output
             let mut stored = HashMap::<TermId, String>::default();
             let mut seen = HashSet::default();
             let id = self.get_id(term);
@@ -233,10 +241,78 @@ impl TermDag {
 
             stored.get(&id).unwrap().clone()
         } else {
-            // TODO
-            let mut stored = HashMap::<TermId, String>::default();
+            // TODO refactor some adjacency list stuff
+            // DAG output
+            let mut stored: HashMap<TermId, String> = HashMap::default();
+            let mut adj_list: HashMap<TermId, Vec<i32>> = HashMap::default();
+            let mut seen = HashSet::default();
+            let mut term_id_map: HashMap<TermId, i32> = HashMap::default();
+            let mut term_id_insertion_order: Vec<TermId> = Vec::default();
+            let mut counter = 0;
+            let id = self.get_id(term);
+            let mut stack = vec![id];
 
-            String::new()
+            // Construct the new IDs and construct the adjacency lis
+            while !stack.is_empty() {
+                let next: TermId = stack.pop().unwrap();
+                if !seen.contains(&next) {
+                    // Give a homemade id number to it
+                    term_id_insertion_order.push(next);
+                    term_id_map.insert(next, counter);
+                    counter = counter + 1;
+                }
+                match self.nodes.get(&next).unwrap().clone() {
+                    Term::App(name, children) => {
+                        if !seen.contains(&next) {
+                            // Add the children to get numbered and then revisit this node
+                            seen.insert(next);
+                            stack.push(next);
+                            for c in children.iter().rev() {
+                                stack.push(*c);
+                            }
+                        } else {
+                            // Construct the string for this node
+                            let mut str = String::new();
+                            let mut edges: Vec<i32> = Vec::default();
+                            str.push_str(&format!(
+                                "(Term: {}, Value: ({}",
+                                term_id_map.get(&next).unwrap().to_string().as_str(),
+                                name
+                            ));
+                            for c in children.iter() {
+                                str.push_str(&format!(
+                                    " (Term: {})",
+                                    term_id_map.get(c).unwrap().to_string().as_str()
+                                ));
+                                edges.push(*term_id_map.get(c).unwrap());
+                            }
+                            str.push_str("))");
+                            adj_list.insert(next, edges);
+                            stored.insert(next, str);
+                        }
+                    }
+                    Term::Lit(lit) => {
+                        adj_list.insert(next, Vec::default());
+                        stored.insert(
+                            next,
+                            format!(
+                                "(Term: {}, Value: {})",
+                                term_id_map.get(&next).unwrap().to_string().as_str(),
+                                lit
+                            ),
+                        );
+                    }
+                }
+            }
+
+            // Construct the string
+            let mut str = String::new();
+            str.push('\n');
+            for id in term_id_insertion_order.iter() {
+                str.push_str(stored.get(id).unwrap());
+                str.push('\n');
+            }
+            str
         }
     }
 
