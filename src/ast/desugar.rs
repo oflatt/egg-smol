@@ -642,7 +642,10 @@ pub(crate) fn desugar_command(
                 if !args.is_empty() {
                     return Err(Error::LookupProofRequiresExpr(expr.to_string()));
                 }
-                vec![NCommand::LookupProof(NormExpr::Call(*f, vec![]), print_tree)]
+                vec![NCommand::LookupProof(
+                    NormExpr::Call(*f, vec![]),
+                    print_tree,
+                )]
             }
             _ => {
                 return Err(Error::LookupProofRequiresExpr(expr.to_string()));
@@ -851,7 +854,11 @@ impl Desugar {
         res
     }
 
-    fn desugar_get_proof(&mut self, query: &Vec<Fact>, print_tree: bool) -> Result<Vec<NCommand>, Error> {
+    fn desugar_get_proof(
+        &mut self,
+        query: &Vec<Fact>,
+        print_tree: bool,
+    ) -> Result<Vec<NCommand>, Error> {
         let proof_ruleset = self.fresh().as_str();
         let result_sort = self.fresh().as_str();
         let result_func = self.fresh().as_str();
@@ -868,7 +875,7 @@ impl Desugar {
               (({result_func}))
               :ruleset {proof_ruleset})
         (run {proof_ruleset} 1)
-        (lookup-proof ({result_func} {tree_or_dag}))
+        (lookup-proof ({result_func}) {tree_or_dag})
         ",
             ))
             .unwrap(),
