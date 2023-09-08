@@ -622,6 +622,21 @@ impl EGraph {
         }
     }
 
+    // perform a very special-case binary join
+    // for queries with two atoms and only one shared variable
+    fn easy_binary_join<F>(
+        &self,
+        atom1: &Atom<Symbol>,
+        atom2: &Atom<Symbol>,
+        shared_var: Symbol,
+        timestamp_ranges: &[Range<u32>],
+        cq: &CompiledQuery,
+        mut f: F,
+    ) where
+        F: FnMut(&[Value]) -> Result,
+    {
+    }
+
     fn gj_for_atom<F>(
         &self,
         // for debugging, the atom seminaive is focusing on
