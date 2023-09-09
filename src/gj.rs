@@ -635,6 +635,13 @@ impl EGraph {
     ) where
         F: FnMut(&[Value]) -> Result,
     {
+        let func_1 = &self.functions[&atom1.head];
+        let func_2 = &self.functions[&atom2.head];
+        let func_1
+        // TODO choose which func to iterate over
+        for (i, tup, out) in func_2.iter_timestamp_range(&timestamp_ranges[1]) {
+
+        }
     }
 
     fn gj_for_atom<F>(
