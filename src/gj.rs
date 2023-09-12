@@ -622,6 +622,132 @@ impl EGraph {
         }
     }
 
+    // perform a very special-case binary join
+    // for queries with two atoms and only one shared variable
+    // returns false if this is not a special case
+    fn easy_binary_join<F>(
+        &self,
+        timestamp_ranges: &[Range<u32>],
+        cq: &CompiledQuery,
+        mut f: F,
+    ) -> bool
+    where
+        F: FnMut(&[Value]) -> Result,
+    {
+        if cq.query.atoms.len() != 2 {
+            return false;
+        }
+
+        if !cq.query.filters.is_empty() {
+            return false;
+        }
+        let atom1 = &cq.query.atoms[0];
+        let atom2 = &cq.query.atoms[1];
+
+        let mut vars1 = HashSet::default();
+        let mut vars2 = HashSet::default();
+        for arg in atom1.args.iter() {
+            if let AtomTerm::Var(v) = arg {
+                if !vars1.insert(v) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        for arg in atom2.args.iter() {
+            if let AtomTerm::Var(v) = arg {
+                if !vars2.insert(v) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        let mut shared_vars = vars1.intersection(&vars2);
+
+        let Some(shared_var) = shared_vars.next() else { return false; };
+
+        if shared_vars.next().is_some() {
+            return false;
+        }
+
+        assert!(timestamp_ranges.len() == 2);
+        let func_1 = &self.functions[&atom1.head];
+        let func_2 = &self.functions[&atom2.head];
+        let var_index_1 = atom1
+            .args
+            .iter()
+            .position(|arg| arg == &AtomTerm::Var(**shared_var))
+            .unwrap();
+        let var_index_2 = atom2
+            .args
+            .iter()
+            .position(|arg| arg == &AtomTerm::Var(**shared_var))
+            .unwrap();
+
+        let Some(func_1_index) = func_1
+            .column_index(var_index_1, &timestamp_ranges[0])
+             else {
+            return false;
+             };
+
+        let atom1_result_indecies = atom1
+            .args
+            .iter()
+            .map(|arg| match arg {
+                AtomTerm::Var(v) => cq.vars.get_index_of(v).unwrap(),
+                AtomTerm::Value(_) => panic!("value in atom"),
+                AtomTerm::Global(_) => panic!("global in atom"),
+            })
+            .collect::<Vec<_>>();
+        let atom2_result_indecies = atom2
+            .args
+            .iter()
+            .map(|arg| match arg {
+                AtomTerm::Var(v) => cq.vars.get_index_of(v).unwrap(),
+                AtomTerm::Value(_) => panic!("value in atom"),
+                AtomTerm::Global(_) => panic!("global in atom"),
+            })
+            .collect::<Vec<_>>();
+
+        // TODO choose which func to iterate over
+        for (_i, func2_values, func2_out) in func_2.iter_timestamp_range(&timestamp_ranges[1]) {
+            let shared_val = if var_index_2 == func2_values.len() {
+                func2_out.value
+            } else {
+                func2_values[var_index_2]
+            };
+            if let Some(indecies) = func_1_index.get(&shared_val) {
+                for index in indecies {
+                    if let Some((func1_values, func1_output)) =
+                        func_1.nodes.get_index((*index).try_into().unwrap())
+                    {
+                        let mut tuple = vec![Value::fake(); cq.vars.len()];
+                        assert!(func1_values.len() == atom1_result_indecies.len() - 1);
+                        for (tup1, atomi1) in func1_values.iter().zip(atom1_result_indecies.iter())
+                        {
+                            tuple[*atomi1] = *tup1;
+                        }
+                        tuple[*atom1_result_indecies.last().unwrap()] = func1_output.value;
+                        for (tup2, atom2) in func2_values.iter().zip(&atom2_result_indecies) {
+                            tuple[*atom2] = *tup2;
+                        }
+                        tuple[*atom2_result_indecies.last().unwrap()] = func2_out.value;
+
+                        for v in &tuple {
+                            assert!(*v != Value::fake());
+                        }
+                        f(&tuple).unwrap();
+                    }
+                }
+            }
+        }
+        true
+    }
+
     fn gj_for_atom<F>(
         &self,
         // for debugging, the atom seminaive is focusing on
@@ -745,7 +871,12 @@ impl EGraph {
                         }
                     }
 
-                    self.gj_for_atom(Some(atom_i), &timestamp_ranges, cq, &mut f);
+                    if !self.easy_binary_join(&timestamp_ranges, cq, &mut f) {
+                        // rebuilding handled by easy binary join
+                        assert!(!is_rebuilding);
+                        self.gj_for_atom(Some(atom_i), &timestamp_ranges, cq, &mut f);
+                    }
+
                     // now we can fix this atom to be "old stuff" only
                     // range is half-open; timestamp is excluded
                     timestamp_ranges[atom_i] = 0..timestamp;
