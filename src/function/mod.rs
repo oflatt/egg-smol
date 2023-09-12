@@ -211,6 +211,23 @@ impl Function {
         Some(target.clone())
     }
 
+    /// Return a column index that contains (a superset of) the offsets for the
+    /// given column. This method can return nothing if the indexes available
+    /// contain too many irrelevant offsets.
+    pub(crate) fn column_index_actually(
+        &self,
+        col: usize,
+        timestamps: &Range<u32>,
+    ) -> Option<Rc<ColumnIndex>> {
+        let range = self.nodes.transform_range(timestamps);
+        if range.end > self.index_updated_through {
+            return None;
+        }
+        let size = range.end.saturating_sub(range.start);
+        let target = &self.indexes[col];
+        Some(target.clone())
+    }
+
     pub(crate) fn remove(&mut self, ks: &[Value], ts: u32) -> bool {
         let res = self.nodes.remove(ks, ts);
         self.maybe_rehash();
@@ -314,44 +331,44 @@ impl Function {
         let mut scratch = ValueVec::new();
         let n_unions = uf.n_unions();
 
-        if uf.new_ids(|sort| self.sorts.contains(&sort)) > (self.nodes.num_offsets() / 2) {
+        /*if uf.new_ids(|sort| self.sorts.contains(&sort)) > (self.nodes.num_offsets() / 2) {
             // basic heuristic: if we displaced a large number of ids relative
             // to the size of the table, then just rebuild everything.
             for i in 0..self.nodes.num_offsets() {
                 self.rebuild_at(i, timestamp, uf, &mut scratch, &mut deferred_merges)?;
             }
-        } else {
-            let mut to_canon = mem::take(&mut self.scratch);
+        } else {*/
+        let mut to_canon = mem::take(&mut self.scratch);
 
-            to_canon.clear();
+        to_canon.clear();
 
-            for (i, (ridx, idx)) in self
-                .rebuild_indexes
-                .iter()
-                .zip(self.indexes.iter())
-                .enumerate()
-            {
-                let sort = self.schema.get_by_pos(i).unwrap();
-                if !sort.is_eq_container_sort() && !sort.is_eq_sort() {
-                    // No need to canonicalize in this case
-                    continue;
-                }
-
-                // attempt to use the rebuilding index if it exists
-                if let Some(ridx) = ridx {
-                    debug_assert!(sort.is_eq_container_sort());
-                    to_canon.extend(ridx.iter().flat_map(|idx| idx.to_canonicalize(uf)))
-                } else {
-                    debug_assert!(sort.is_eq_sort());
-                    to_canon.extend(idx.to_canonicalize(uf))
-                }
+        for (i, (ridx, idx)) in self
+            .rebuild_indexes
+            .iter()
+            .zip(self.indexes.iter())
+            .enumerate()
+        {
+            let sort = self.schema.get_by_pos(i).unwrap();
+            if !sort.is_eq_container_sort() && !sort.is_eq_sort() {
+                // No need to canonicalize in this case
+                continue;
             }
 
-            for i in to_canon.iter().copied() {
-                self.rebuild_at(i, timestamp, uf, &mut scratch, &mut deferred_merges)?;
+            // attempt to use the rebuilding index if it exists
+            if let Some(ridx) = ridx {
+                debug_assert!(sort.is_eq_container_sort());
+                to_canon.extend(ridx.iter().flat_map(|idx| idx.to_canonicalize(uf)))
+            } else {
+                debug_assert!(sort.is_eq_sort());
+                to_canon.extend(idx.to_canonicalize(uf))
             }
-            self.scratch = to_canon;
         }
+
+        for i in to_canon.iter().copied() {
+            self.rebuild_at(i, timestamp, uf, &mut scratch, &mut deferred_merges)?;
+        }
+        self.scratch = to_canon;
+        /*}*/
         self.maybe_rehash();
         Ok((
             uf.n_unions() - n_unions + std::mem::take(&mut self.updates),

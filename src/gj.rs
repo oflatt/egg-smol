@@ -11,6 +11,7 @@ use crate::{
 use std::{
     cell::UnsafeCell,
     fmt::{self, Debug},
+    mem::swap,
     ops::Range,
 };
 
@@ -638,11 +639,29 @@ impl EGraph {
             return false;
         }
 
-        if !cq.query.filters.is_empty() {
-            return false;
+        let mut atom1 = &cq.query.atoms[0];
+        let mut atom2 = &cq.query.atoms[1];
+
+        if atom1.head.as_str().contains("Parent") {
+            swap(&mut atom1, &mut atom2);
         }
-        let atom1 = &cq.query.atoms[0];
-        let atom2 = &cq.query.atoms[1];
+
+        let [neqatom] = &cq.query.filters.as_slice() else {
+            return false;
+        };
+
+        if neqatom.head.name().to_string() != "!=" {
+            return false;
+        };
+        let AtomTerm::Var(a) = &neqatom.args[0] else {
+            return false;
+        };
+        let AtomTerm::Var(b) = &neqatom.args[1] else {
+            return false;
+        };
+
+        let v1neq_index = cq.vars.get_index_of(a);
+        let v2neq_index = cq.vars.get_index_of(b);
 
         let mut vars1 = HashSet::default();
         let mut vars2 = HashSet::default();
@@ -689,9 +708,9 @@ impl EGraph {
             .unwrap();
 
         let Some(func_1_index) = func_1
-            .column_index(var_index_1, &timestamp_ranges[0])
+            .column_index_actually(var_index_1, &timestamp_ranges[0])
              else {
-            return false;
+                panic!("index wasn't present for func {}", func_1.decl.name);
              };
 
         let atom1_result_indecies = atom1
@@ -737,10 +756,9 @@ impl EGraph {
                         }
                         tuple[*atom2_result_indecies.last().unwrap()] = func2_out.value;
 
-                        for v in &tuple {
-                            assert!(*v != Value::fake());
+                        if tuple[v1neq_index.unwrap()] != tuple[v2neq_index.unwrap()] {
+                            f(&tuple).unwrap();
                         }
-                        f(&tuple).unwrap();
                     }
                 }
             }
@@ -871,9 +889,9 @@ impl EGraph {
                         }
                     }
 
-                    if !self.easy_binary_join(&timestamp_ranges, cq, &mut f) {
-                        // rebuilding handled by easy binary join
-                        assert!(!is_rebuilding);
+                    if is_rebuilding {
+                        assert!(self.easy_binary_join(&timestamp_ranges, cq, &mut f));
+                    } else {
                         self.gj_for_atom(Some(atom_i), &timestamp_ranges, cq, &mut f);
                     }
 
