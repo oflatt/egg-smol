@@ -732,8 +732,10 @@ impl EGraph {
             })
             .collect::<Vec<_>>();
 
+        let mut size = 0;
         // TODO choose which func to iterate over
         for (_i, func2_values, func2_out) in func_2.iter_timestamp_range(&timestamp_ranges[1]) {
+            size += 1;
             let shared_val = if var_index_2 == func2_values.len() {
                 func2_out.value
             } else {
@@ -763,6 +765,9 @@ impl EGraph {
                 }
             }
         }
+        eprintln!("size: {}", size);
+        eprintln!("timestamps: {:?}", timestamp_ranges);
+        eprintln!("atoms: {:?}", cq.query.atoms);
         true
     }
 
@@ -877,7 +882,7 @@ impl EGraph {
                     // So do the join for new unionfind entries
                     // and all the other atoms.
                     // TODO this hack fails on one benchmark, not sure why
-                    let rebuilding_hack = false;
+                    let rebuilding_hack = true;
                     if rebuilding_hack {
                         let atom_has_parent = format!("{:?}", atom).contains("Parent_");
                         if is_rebuilding && !atom_has_parent {
@@ -889,7 +894,8 @@ impl EGraph {
                         }
                     }
 
-                    if is_rebuilding {
+                    let use_custom_binary_join = true;
+                    if is_rebuilding && use_custom_binary_join {
                         assert!(self.easy_binary_join(&timestamp_ranges, cq, &mut f));
                     } else {
                         self.gj_for_atom(Some(atom_i), &timestamp_ranges, cq, &mut f);

@@ -222,6 +222,17 @@ impl Schedule {
     pub fn saturate(self) -> Self {
         Schedule::Saturate(Box::new(self))
     }
+
+    pub fn then(self, other: Self) -> Self {
+        Schedule::Sequence(vec![self, other])
+    }
+
+    pub fn run(ruleset: Symbol) -> Self {
+        Schedule::Run(RunConfig {
+            ruleset,
+            until: None,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

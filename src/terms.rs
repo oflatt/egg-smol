@@ -52,6 +52,8 @@ impl<'a> TermState<'a> {
     fn make_parent_table(&self, name: Symbol) -> Vec<Command> {
         let pname = self.parent_name(name);
         let union_old_new = self.union(name, "old", "new");
+        let p_ruleset_name = self.parent_ruleset_name();
+        let cleanup_parent_name = self.cleanup_parent_name();
         self.parse_program(&format!(
             "(function {pname} ({name}) {name} 
                         :on_merge ({union_old_new})
@@ -60,8 +62,14 @@ impl<'a> TermState<'a> {
             (rule ((= ({pname} a) b)
                    (= ({pname} b) c))
                   ((set ({pname} a) c))
-                   :ruleset {})",
-            self.parent_ruleset_name()
+                   :ruleset {p_ruleset_name})
+            ;; optimization: delete non-canonical ids
+            ;; after rebuilding
+            (rule ((= ({pname} a) b)
+                   (!= a b))
+                  ((delete ({pname} a)))
+                   :ruleset {cleanup_parent_name})       
+            ",
         ))
         .unwrap()
     }
@@ -391,19 +399,11 @@ impl<'a> TermState<'a> {
     }
 
     fn rebuild(&self) -> Schedule {
-        Schedule::Sequence(vec![
-            Schedule::Run(RunConfig {
-                ruleset: self.parent_ruleset_name(),
-                until: None,
-            })
-            .saturate(),
-            Schedule::Run(RunConfig {
-                ruleset: self.rebuilding_ruleset_name(),
-                until: None,
-            })
-            .saturate(),
-        ])
-        .saturate()
+        Schedule::run(self.parent_ruleset_name())
+            .saturate()
+            .then(Schedule::run(self.rebuilding_ruleset_name()).saturate())
+            .saturate()
+        //.then(Schedule::run(self.cleanup_parent_name()).saturate())
     }
 
     fn instrument_schedule(&mut self, schedule: &NormSchedule) -> Schedule {
@@ -513,12 +513,21 @@ impl<'a> TermState<'a> {
         ))
     }
 
+    fn cleanup_parent_name(&self) -> Symbol {
+        Symbol::from(format!(
+            "cleanup_parent{}",
+            "_".repeat(self.desugar().number_underscores)
+        ))
+    }
+
     pub(crate) fn term_header(&self) -> Vec<Command> {
         let str = format!(
             "(ruleset {})
-                         (ruleset {})",
+             (ruleset {})
+             (ruleset {})",
             self.parent_ruleset_name(),
-            self.rebuilding_ruleset_name()
+            self.rebuilding_ruleset_name(),
+            self.cleanup_parent_name(),
         );
         self.parse_program(&str).unwrap()
     }
