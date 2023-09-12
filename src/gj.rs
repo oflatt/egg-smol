@@ -635,12 +635,36 @@ impl EGraph {
     ) where
         F: FnMut(&[Value]) -> Result,
     {
+        assert!(timestamp_ranges.len() == 2);
         let func_1 = &self.functions[&atom1.head];
         let func_2 = &self.functions[&atom2.head];
-        let func_1
+        let var_index_1 = atom1
+            .args
+            .iter()
+            .position(|arg| arg == &AtomTerm::Var(shared_var))
+            .unwrap();
+        let var_index_2 = atom2
+            .args
+            .iter()
+            .position(|arg| arg == &AtomTerm::Var(shared_var))
+            .unwrap();
+
+        // TODO unwrap here is not safe
+        let func_1_index = func_1
+            .column_index(var_index_1, &timestamp_ranges[0])
+            .unwrap();
         // TODO choose which func to iterate over
         for (i, tup, out) in func_2.iter_timestamp_range(&timestamp_ranges[1]) {
-
+            let val = tup[var_index_2];
+            if let Some(indecies) = func_1_index.get(&val) {
+                for index in indecies {
+                    if let Some(func1_output) = func_1.nodes.get_index((*index).try_into().unwrap())
+                    {
+                        let mut tuple = vec![Value::fake(); cq.vars.len()];
+                        f(&tuple);
+                    }
+                }
+            }
         }
     }
 
