@@ -199,8 +199,8 @@ impl TermDag {
 
     fn term_id_to_string(&self, val: &TermId) -> String {
         match val {
-            TermId::Value(v) => format!("Value tag: {} Value bits: {}", v.tag, v.bits),
-            TermId::Num(n) => format!("Term Num: {}", n),
+            TermId::Value(v) => format!("Tag: {} Bits: {}", v.tag, v.bits),
+            TermId::Num(n) => format!("Num: {}", n),
         }
     }
 
@@ -241,18 +241,17 @@ impl TermDag {
 
             stored.get(&id).unwrap().clone()
         } else {
-            // TODO refactor some adjacency list stuff
             // DAG output
             let mut stored: HashMap<TermId, String> = HashMap::default();
             let mut adj_list: HashMap<TermId, Vec<i32>> = HashMap::default();
             let mut seen = HashSet::default();
             let mut term_id_map: HashMap<TermId, i32> = HashMap::default();
             let mut term_id_insertion_order: Vec<TermId> = Vec::default();
+            let mut value_map = HashMap::<i32, TermId>::default();
             let mut counter = 0;
             let id = self.get_id(term);
             let mut stack = vec![id];
 
-            // Construct the new IDs and construct the adjacency lis
             while !stack.is_empty() {
                 let next: TermId = stack.pop().unwrap();
                 if !seen.contains(&next) {
@@ -260,7 +259,40 @@ impl TermDag {
                     term_id_insertion_order.push(next);
                     term_id_map.insert(next, counter);
                     counter = counter + 1;
+                    if let TermId::Value(v) = next {
+                        value_map.insert(v.bits as i32, next);
+                    }
                 }
+                if let Term::App(_, children) = self.nodes.get(&next).unwrap().clone() {
+                    if !seen.contains(&next) {
+                        // Add the children to get numbered and then revisit this node
+                        seen.insert(next);
+                        for c in children.iter().rev() {
+                            stack.push(*c);
+                        }
+                    }
+                }
+            }
+
+            let mut values = value_map.keys().collect::<Vec<_>>();
+            let mut homemade_value_ids = value_map
+                .iter()
+                .map(|(k, v)| *term_id_map.get(v).unwrap())
+                .collect::<Vec<_>>();
+
+            values.sort();
+            homemade_value_ids.sort();
+
+            for (i, v) in values.iter().enumerate() {
+                term_id_map.insert(value_map[*v], homemade_value_ids[i]);
+            }
+
+            seen.clear();
+            stack = vec![id];
+
+            // Construct the new IDs and construct the adjacency lis
+            while !stack.is_empty() {
+                let next: TermId = stack.pop().unwrap();
                 match self.nodes.get(&next).unwrap().clone() {
                     Term::App(name, children) => {
                         if !seen.contains(&next) {
