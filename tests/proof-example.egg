@@ -38,4 +38,4 @@
 (check (= addx2
           addx20))
 
-(get-proof (= addx2 addzerofront))
+(get-proof (= addx2 addx20))
