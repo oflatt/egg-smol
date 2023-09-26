@@ -7,7 +7,6 @@ pub(crate) struct ProofChecker<'a> {
     egraph: &'a EGraph,
     term_encoded_rules: HashMap<Symbol, (NormRule, CommandId)>,
     globals: HashMap<Symbol, Term>,
-    global_primitives: HashMap<Symbol, Value>,
 }
 
 struct RuleContext {
@@ -33,7 +32,6 @@ impl<'a> ProofChecker<'a> {
             proven: HashMap::default(),
             term_encoded_rules,
             globals: HashMap::default(),
-            global_primitives: HashMap::default(),
         };
 
         checker.eval_globals();
@@ -87,9 +85,6 @@ impl<'a> ProofChecker<'a> {
             NormAction::LetVar(lhs, rhs) => {
                 let rhs_term = self.get_global_term(*rhs);
                 self.set_global_term(*lhs, rhs_term);
-                if let Some(rhs_value) = self.get_global_value(*rhs) {
-                    self.set_global_value(*lhs, rhs_value)
-                }
             }
             NormAction::LetLit(lhs, lit) => {
                 let rhs_term = self.termdag.make_lit(lit.clone(), Some(self.egraph));
@@ -307,19 +302,6 @@ impl<'a> ProofChecker<'a> {
 
     fn set_global_term(&mut self, sym: Symbol, term: Term) {
         assert!(self.globals.insert(sym, term.clone()).is_none());
-        if let Term::Lit(l) = term {
-            self.global_primitives.insert(sym, self.egraph.eval_lit(&l));
-        }
-    }
-
-    fn get_global_value(&self, sym: Symbol) -> Option<Value> {
-        self.global_primitives.get(&sym).cloned()
-    }
-
-    fn set_global_value(&mut self, sym: Symbol, val: Value) {
-        if let Some(existing) = self.global_primitives.insert(sym, val) {
-            assert!(existing == val);
-        }
     }
 
     fn get_term(&self, rule_ctx: &RuleContext, sym: Symbol) -> Term {
@@ -335,7 +317,7 @@ impl<'a> ProofChecker<'a> {
     }
 
     fn set_term(&mut self, rule_ctx: &mut RuleContext, sym: Symbol, term: Term) {
-        assert!(rule_ctx.bindings.insert(sym, term.clone()).is_none());
+        assert!(rule_ctx.bindings.insert(sym, term).is_none());
     }
 
     // compute a primitive
@@ -434,7 +416,6 @@ impl<'a> ProofChecker<'a> {
                     .unwrap_or_else(|| panic!("Expected a primitive. Got: {:?}", op));
                 output_type
             }
-            _ => panic!("Expected a literal term"),
         }
     }
 

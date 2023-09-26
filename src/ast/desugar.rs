@@ -37,7 +37,7 @@ fn desugar_rewrite(
     vec![NCommand::NormRule {
         ruleset,
         name,
-        rule: flatten_rule(rule.clone(), desugar),
+        rule: flatten_rule(rule, desugar),
     }]
 }
 

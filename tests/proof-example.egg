@@ -6,6 +6,9 @@
     (Const Rational)
     (Var String))
 
+(function myanalysis (Math) i64 :merge (min old new))
+
+
 (rule ((Add a b))
       ((union (Add a b) (Add (Add a b) (Const (rational 0 1)))))
       :name "add0")
@@ -35,4 +38,4 @@
 (check (= addx2
           addx20))
 
-(get-proof (= addx2 addx20))
+(get-proof (= addx2 addzerofront))
