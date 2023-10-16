@@ -249,12 +249,7 @@ impl<'a> ProofChecker<'a> {
         (stripped.into(), inputs, output)
     }
 
-    pub(crate) fn check_rule_proof(
-        &mut self,
-        name: String,
-        proof_list: Vec<Term>,
-        _to_prove: Term,
-    ) {
+    pub(crate) fn check_rule_proof(&mut self, name: String, proof_list: Vec<Term>, to_prove: Term) {
         // first check proofs in proof list
         let mut term_list = vec![];
 
@@ -265,7 +260,7 @@ impl<'a> ProofChecker<'a> {
         if name.contains("-merge-fn__") {
             // TODO check merge function proofs
         } else {
-            let (rule, _ctx) = self.get_term_encoded(name.into()).clone();
+            let (rule, ctx) = self.get_term_encoded(name.clone().into()).clone();
             let mut current_atom = 0;
             let mut rule_ctx = RuleContext {
                 bindings: HashMap::default(),
@@ -329,8 +324,61 @@ impl<'a> ProofChecker<'a> {
                 }
             }
 
-            // TODO check that the to_prove
-            // actually appears in the body with the given bindings
+            for action in rule.head {
+                match action {
+                    NormAction::Let(lhs, NormExpr::Call(head, body)) => {
+                        let func_type = self
+                            .egraph
+                            .term_encoded_typeinfo
+                            .lookup_expr(ctx, &NormExpr::Call(head, body.clone()))
+                            .unwrap();
+
+                        let body_terms = body
+                            .iter()
+                            .map(|v| self.get_term(&rule_ctx, *v))
+                            .collect::<Vec<_>>();
+                        if func_type.is_primitive {
+                            let term = self.termdag.make(head, body_terms, None);
+                            let (_output_value, output_term) = self.do_compute(term);
+                            self.set_term(&mut rule_ctx, lhs, output_term);
+                        } else if func_type.is_datatype {
+                            let body_term = self.termdag.make(head, body_terms, None);
+                            self.set_term(&mut rule_ctx, lhs, body_term)
+                        } else {
+                            // the function must be a datatype.
+                            // This should be fixed by https://github.com/egraphs-good/egglog/issues/228
+                            // In the future, but for now we disallow these rules
+                            assert!(
+                                func_type.is_datatype,
+                                "Calling non-datatypes in an action is not supported by proofs. See issue #228")
+                        }
+                    }
+                    NormAction::LetVar(lhs, rhs) => {
+                        let rhs_term = self.get_term(&rule_ctx, rhs);
+                        self.set_term(&mut rule_ctx, lhs, rhs_term);
+                    }
+                    NormAction::LetLit(lhs, lit) => {
+                        let rhs_term = self.termdag.make_lit(lit.clone(), Some(self.egraph));
+                        self.set_term(&mut rule_ctx, lhs, rhs_term)
+                    }
+                    NormAction::Set(NormExpr::Call(head, body), rhs) => {
+                        let term_name = self.egraph.proof_state.term_func_name(head);
+                        let mut body_terms = body
+                            .iter()
+                            .map(|v| self.get_term(&rule_ctx, *v))
+                            .collect::<Vec<_>>();
+                        body_terms.push(self.get_term(&rule_ctx, rhs));
+                        let term = self.termdag.make(term_name, body_terms, None);
+                    }
+                    _ => (),
+                }
+            }
+
+            panic!(
+                "Unable to prove term {} with rule {}",
+                self.termdag.to_string(&to_prove),
+                name
+            );
         }
     }
 
