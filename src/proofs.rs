@@ -33,7 +33,7 @@ impl ProofState {
         format!("T{}", "_".repeat(self.desugar.number_underscores))
     }
 
-    fn term_func_name(&self, name: Symbol) -> Symbol {
+    pub fn term_func_name(&self, name: Symbol) -> Symbol {
         format!("{}{}", name, self.term_func_ending()).into()
     }
 
@@ -43,7 +43,7 @@ impl ProofState {
         let types = self.type_info.func_types.get(&fdecl.name).unwrap();
         let input = if types.is_datatype {
             // datatypes are already terms, just wrap
-            vec![fdecl.schema.output.clone()]
+            vec![fdecl.schema.output]
         } else {
             fdecl
                 .schema
@@ -95,22 +95,6 @@ impl ProofState {
         let term = self.get_term(expr, output);
         let proof_func = self.proof_func_name();
         format!("({proof_func} {term})")
-    }
-
-    fn var_to_proof(&self, var: Symbol) -> String {
-        let term = self.var_to_term(var);
-        let proof_func = self.proof_func_name();
-        format!(
-            "({proof_func} {term})",
-            proof_func = proof_func,
-            term = term
-        )
-    }
-
-    fn var_to_term(&self, var: Symbol) -> String {
-        let var_type = self.type_info.lookup(self.current_ctx, var).unwrap();
-        let term_name = self.term_func_name(var_type.name());
-        format!("({term_name} {var})", term_name = term_name, var = var)
     }
 
     /// Construct the term for this expression.

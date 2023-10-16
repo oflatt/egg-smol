@@ -67,7 +67,7 @@ impl EGraph {
                                 .all(|x| x))
                         .then(|| {
                             let node = Node { sym, inputs };
-                            ext.expr_from_node(&node, termdag, output.value)
+                            ext.expr_from_node(&node, termdag)
                         })
                     })
                     .collect()
@@ -103,7 +103,7 @@ impl<'a> Extractor<'a> {
         extractor
     }
 
-    fn expr_from_node(&self, node: &Node, termdag: &mut TermDag, value: Value) -> Term {
+    fn expr_from_node(&self, node: &Node, termdag: &mut TermDag) -> Term {
         let mut children = vec![];
         for value in node.inputs {
             let arcsort = self.egraph.get_sort(value).unwrap();

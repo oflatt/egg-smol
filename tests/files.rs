@@ -141,6 +141,7 @@ fn generate_tests(glob: &str) -> Vec<Trial> {
             "string_quotes",
             "repro_querybug3",
             "fusion",
+            "herbie_tutorial",
             // these two are too slow
             "math_microbenchmark",
             "repro_unsound",

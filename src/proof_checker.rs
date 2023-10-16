@@ -7,6 +7,7 @@ pub(crate) struct ProofChecker<'a> {
     egraph: &'a EGraph,
     term_encoded_rules: HashMap<Symbol, (NormRule, CommandId)>,
     globals: HashMap<Symbol, Term>,
+    global_terms: HashSet<Term>,
 }
 
 struct RuleContext {
@@ -32,6 +33,7 @@ impl<'a> ProofChecker<'a> {
             proven: HashMap::default(),
             term_encoded_rules,
             globals: HashMap::default(),
+            global_terms: HashSet::default(),
         };
 
         checker.eval_globals();
@@ -73,13 +75,16 @@ impl<'a> ProofChecker<'a> {
                     let term = self.termdag.make(*op, body_terms, None);
                     let (_output_value, output_term) = self.do_compute(term);
                     self.set_global_term(*lhs, output_term);
-                } else {
+                } else if func_type.is_datatype {
                     let body_terms = body
                         .iter()
                         .map(|v| self.get_global_term(*v))
                         .collect::<Vec<_>>();
                     let body_term = self.termdag.make(*op, body_terms, None);
+
                     self.set_global_term(*lhs, body_term)
+                } else {
+                    panic!("Proofs do not yet support looking up values globally in non-datatype functions. This is because the contents of these tables depend on previously run rules.");
                 }
             }
             NormAction::LetVar(lhs, rhs) => {
@@ -90,15 +95,45 @@ impl<'a> ProofChecker<'a> {
                 let rhs_term = self.termdag.make_lit(lit.clone(), Some(self.egraph));
                 self.set_global_term(*lhs, rhs_term)
             }
+            NormAction::Set(NormExpr::Call(head, body), rhs) => {
+                let term_name = self.egraph.proof_state.term_func_name(*head);
+                let mut body_terms = body
+                    .iter()
+                    .map(|v| self.get_global_term(*v))
+                    .collect::<Vec<_>>();
+                body_terms.push(self.get_global_term(*rhs));
+                let term = self.termdag.make(term_name, body_terms, None);
 
-            NormAction::Set(_, _) => {
-                // TODO set up so that we can check proofs of original
+                self.global_terms.insert(term);
             }
             NormAction::Union(_, _) => panic!("No union should exist after term encoding"),
             NormAction::Extract(..)
             | NormAction::Print(..)
             | NormAction::Delete(_)
             | NormAction::Panic(_) => (),
+        }
+    }
+
+    pub(crate) fn unwrap_datatype(&self, op: Symbol, term: Term) -> Term {
+        let func_type = self
+            .egraph
+            .proof_state
+            .type_info
+            .func_types
+            .get::<Symbol>(&op.into())
+            .unwrap_or_else(|| panic!("No function type for {}", op));
+        if func_type.is_datatype {
+            match term {
+                Term::App(wrapper, body) => {
+                    assert!(wrapper
+                        .as_str()
+                        .ends_with(&self.egraph.proof_state.term_func_ending()));
+                    self.termdag.get_term(body[0])
+                }
+                Term::Lit(_) => panic!("Cannot unwrap a literal"),
+            }
+        } else {
+            term
         }
     }
 
@@ -110,10 +145,16 @@ impl<'a> ProofChecker<'a> {
             Term::App(op, children) => {
                 // if this is an original proof
                 if op.as_str() == self.egraph.proof_state.original_name() {
-                    /*
-                    TODO check this was an original term in the egraph
-                    */
                     assert!(children.len() == 1);
+
+                    // we need to unwrap datatypes
+                    let term_to_prove =
+                        self.unwrap_datatype(*op, self.termdag.get_term(children[0]));
+                    assert!(
+                        self.global_terms.contains(&term_to_prove),
+                        "Failed to find global definition of original proof: {}",
+                        self.termdag.to_string(&self.termdag.get_term(children[0]))
+                    );
                     self.termdag.get_term(children[0])
                 } else if op.as_str() == self.egraph.proof_state.rule_proof_constructor() {
                     assert!(children.len() == 3);
@@ -302,6 +343,7 @@ impl<'a> ProofChecker<'a> {
 
     fn set_global_term(&mut self, sym: Symbol, term: Term) {
         assert!(self.globals.insert(sym, term.clone()).is_none());
+        self.global_terms.insert(term);
     }
 
     fn get_term(&self, rule_ctx: &RuleContext, sym: Symbol) -> Term {
