@@ -245,13 +245,16 @@ impl TermDag {
             let mut stored: HashMap<TermId, String> = HashMap::default();
             let mut adj_list: HashMap<TermId, Vec<i32>> = HashMap::default();
             let mut seen = HashSet::default();
+            // Maps term IDs to their new homemade IDs
             let mut term_id_map: HashMap<TermId, i32> = HashMap::default();
             let mut term_id_insertion_order: Vec<TermId> = Vec::default();
+            // Maps homemade IDs to their original term IDs
             let mut value_map = HashMap::<i32, TermId>::default();
             let mut counter = 0;
             let id = self.get_id(term);
             let mut stack = vec![id];
 
+            //Initial numbering
             while !stack.is_empty() {
                 let next: TermId = stack.pop().unwrap();
                 if !seen.contains(&next) {
@@ -265,7 +268,7 @@ impl TermDag {
                 }
                 if let Term::App(_, children) = self.nodes.get(&next).unwrap().clone() {
                     if !seen.contains(&next) {
-                        // Add the children to get numbered and then revisit this node
+                        // Add the children to get numbered
                         seen.insert(next);
                         for c in children.iter().rev() {
                             stack.push(*c);
@@ -274,6 +277,7 @@ impl TermDag {
                 }
             }
 
+            // Renumber homemade IDs for values to have the same ordering as the original IDs
             let mut values = value_map.keys().collect::<Vec<_>>();
             let mut homemade_value_ids = value_map
                 .iter()
@@ -290,7 +294,7 @@ impl TermDag {
             seen.clear();
             stack = vec![id];
 
-            // Construct the new IDs and construct the adjacency lis
+            // Construct the adjacency list for the Terms with the new IDs
             while !stack.is_empty() {
                 let next: TermId = stack.pop().unwrap();
                 match self.nodes.get(&next).unwrap().clone() {
@@ -307,7 +311,7 @@ impl TermDag {
                             let mut str = String::new();
                             let mut edges: Vec<i32> = Vec::default();
                             str.push_str(&format!(
-                                "(Term: {}, Value: ({}",
+                                "(Term: {}, ({}",
                                 term_id_map.get(&next).unwrap().to_string().as_str(),
                                 name
                             ));
@@ -328,7 +332,7 @@ impl TermDag {
                         stored.insert(
                             next,
                             format!(
-                                "(Term: {}, Value: {})",
+                                "(Term: {}, {})",
                                 term_id_map.get(&next).unwrap().to_string().as_str(),
                                 lit
                             ),
