@@ -300,13 +300,13 @@ impl TermDag {
                 match self.nodes.get(&next).unwrap().clone() {
                     Term::App(name, children) => {
                         if !seen.contains(&next) {
-                            // Add the children to get numbered and then revisit this node
+                            // Construct the string for the children
                             seen.insert(next);
-                            stack.push(next);
                             for c in children.iter().rev() {
                                 stack.push(*c);
                             }
-                        } else {
+
+                            seen.insert(next);
                             // Construct the string for this node
                             let mut str = String::new();
                             let mut edges: Vec<i32> = Vec::default();
@@ -341,7 +341,7 @@ impl TermDag {
                 }
             }
 
-            // Construct the string
+            // Construct DAG output
             let mut str = String::new();
             str.push('\n');
             for id in term_id_insertion_order.iter() {
