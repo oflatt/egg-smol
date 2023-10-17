@@ -248,7 +248,7 @@ impl TermDag {
             // Maps term IDs to their new homemade IDs
             let mut term_id_map: HashMap<TermId, i32> = HashMap::default();
             let mut term_id_insertion_order: Vec<TermId> = Vec::default();
-            // Maps homemade IDs to their original term IDs
+            // Maps values to their term IDs
             let mut value_map = HashMap::<i32, TermId>::default();
             let mut counter = 0;
             let id = self.get_id(term);
