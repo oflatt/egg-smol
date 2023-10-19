@@ -18,7 +18,7 @@ use extract::Extractor;
 use hashbrown::hash_map::Entry;
 use index::ColumnIndex;
 use instant::{Duration, Instant};
-use proof_checker::ProofChecker;
+use proof_checker::{ProofChecker, check_proof_compatible};
 pub use serialize::SerializeConfig;
 use sort::*;
 use termdag::{Term, TermDag, FunctionEntry};
@@ -1111,6 +1111,10 @@ impl EGraph {
         self.proof_state.type_info.typecheck_program(&program)?;
         // TODO remove when AST is typed
         self.term_encoded_typeinfo.typecheck_program(&program).unwrap();
+
+        if self.proofs_enabled {
+            check_proof_compatible(&self.proof_state.type_info, &program);
+        }
         if stop == CompilerPassStop::TypecheckTermEncoding {
             return Ok(program);
         }
@@ -1194,6 +1198,9 @@ impl EGraph {
     pub fn get_run_report(&self) -> &Option<RunReport> {
         &self.run_report
     }
+
+
+    
 }
 
 #[derive(Debug, Error)]

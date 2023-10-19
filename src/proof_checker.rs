@@ -84,7 +84,7 @@ impl<'a> ProofChecker<'a> {
 
                     self.set_global_term(*lhs, body_term)
                 } else {
-                    panic!("Proofs do not yet support looking up values globally in non-datatype functions. This is because the contents of these tables depend on previously run rules.");
+                    panic!("Not supported: Should have been caught by check_proof_compatible");
                 }
             }
             NormAction::LetVar(lhs, rhs) => {
@@ -114,24 +114,26 @@ impl<'a> ProofChecker<'a> {
         }
     }
 
-    pub(crate) fn unwrap_datatype(&self, op: Symbol, term: Term) -> Term {
+    pub(crate) fn unwrap_datatype(&self, term: Term) -> Term {
+        let Term::App(term_wrapper, args) = term.clone() else {
+            return term;
+        };
+        assert!(term_wrapper
+            .as_str()
+            .contains(&self.egraph.proof_state.term_func_ending()));
+        let stripped = term_wrapper
+            .as_str()
+            .strip_suffix(&self.egraph.proof_state.term_func_ending())
+            .unwrap();
         let func_type = self
             .egraph
             .proof_state
             .type_info
             .func_types
-            .get::<Symbol>(&op.into())
-            .unwrap_or_else(|| panic!("No function type for {}", op));
+            .get::<Symbol>(&stripped.into())
+            .unwrap_or_else(|| panic!("No function type for {}", stripped));
         if func_type.is_datatype {
-            match term {
-                Term::App(wrapper, body) => {
-                    assert!(wrapper
-                        .as_str()
-                        .ends_with(&self.egraph.proof_state.term_func_ending()));
-                    self.termdag.get_term(body[0])
-                }
-                Term::Lit(_) => panic!("Cannot unwrap a literal"),
-            }
+            self.termdag.get_term(args[0])
         } else {
             term
         }
@@ -148,8 +150,7 @@ impl<'a> ProofChecker<'a> {
                     assert!(children.len() == 1);
 
                     // we need to unwrap datatypes
-                    let term_to_prove =
-                        self.unwrap_datatype(*op, self.termdag.get_term(children[0]));
+                    let term_to_prove = self.unwrap_datatype(self.termdag.get_term(children[0]));
                     assert!(
                         self.global_terms.contains(&term_to_prove),
                         "Failed to find global definition of original proof: {}",
@@ -253,6 +254,12 @@ impl<'a> ProofChecker<'a> {
         // first check proofs in proof list
         let mut term_list = vec![];
 
+        // TODO right now we have a ugly distinction between
+        // a "unwrapped" term and a normal one
+        // "Unwrapped" terms don't have the extra datatype
+        // wrapper.
+        let to_prove_unwrapped = self.unwrap_datatype(to_prove.clone());
+
         for proof in proof_list {
             term_list.push(self.check_proof(proof));
         }
@@ -324,8 +331,8 @@ impl<'a> ProofChecker<'a> {
                 }
             }
 
-            for action in rule.head {
-                match action {
+            'actions: for action in rule.head {
+                let resulting_term = match action {
                     NormAction::Let(lhs, NormExpr::Call(head, body)) => {
                         let func_type = self
                             .egraph
@@ -340,26 +347,26 @@ impl<'a> ProofChecker<'a> {
                         if func_type.is_primitive {
                             let term = self.termdag.make(head, body_terms, None);
                             let (_output_value, output_term) = self.do_compute(term);
-                            self.set_term(&mut rule_ctx, lhs, output_term);
+                            self.set_term(&mut rule_ctx, lhs, output_term.clone());
+                            output_term
                         } else if func_type.is_datatype {
                             let body_term = self.termdag.make(head, body_terms, None);
-                            self.set_term(&mut rule_ctx, lhs, body_term)
+                            self.set_term(&mut rule_ctx, lhs, body_term.clone());
+                            body_term
                         } else {
-                            // the function must be a datatype.
-                            // This should be fixed by https://github.com/egraphs-good/egglog/issues/228
-                            // In the future, but for now we disallow these rules
-                            assert!(
-                                func_type.is_datatype,
-                                "Calling non-datatypes in an action is not supported by proofs. See issue #228")
+                            panic!(
+                                "Not supported by proofs, should have been caught by check_proof_compatible")
                         }
                     }
                     NormAction::LetVar(lhs, rhs) => {
                         let rhs_term = self.get_term(&rule_ctx, rhs);
-                        self.set_term(&mut rule_ctx, lhs, rhs_term);
+                        self.set_term(&mut rule_ctx, lhs, rhs_term.clone());
+                        rhs_term
                     }
                     NormAction::LetLit(lhs, lit) => {
                         let rhs_term = self.termdag.make_lit(lit.clone(), Some(self.egraph));
-                        self.set_term(&mut rule_ctx, lhs, rhs_term)
+                        self.set_term(&mut rule_ctx, lhs, rhs_term.clone());
+                        rhs_term
                     }
                     NormAction::Set(NormExpr::Call(head, body), rhs) => {
                         let term_name = self.egraph.proof_state.term_func_name(head);
@@ -368,9 +375,23 @@ impl<'a> ProofChecker<'a> {
                             .map(|v| self.get_term(&rule_ctx, *v))
                             .collect::<Vec<_>>();
                         body_terms.push(self.get_term(&rule_ctx, rhs));
-                        let term = self.termdag.make(term_name, body_terms, None);
+
+                        self.termdag.make(term_name, body_terms, None)
                     }
-                    _ => (),
+                    NormAction::Union(_, _) => panic!("No union should exist after term encoding"),
+                    NormAction::Extract(..)
+                    | NormAction::Print(..)
+                    | NormAction::Delete(_)
+                    | NormAction::Panic(_) => continue 'actions,
+                };
+                eprintln!(
+                    "Resulting term: {}",
+                    self.termdag.to_string(&resulting_term)
+                );
+
+                // we have proven our term, return from the function
+                if resulting_term == to_prove_unwrapped {
+                    return;
                 }
             }
 
@@ -513,5 +534,42 @@ impl<'a> ProofChecker<'a> {
         self.term_encoded_rules
             .get(&name)
             .unwrap_or_else(|| panic!("get_term_encoded: no rule named '{name}'"))
+    }
+}
+
+// TODO convert to return a Result instead of panic
+/// Asserts that this program is compatible with proofs,
+/// throwing an error if it is not.
+/// In the future, we hope to make all egglog programs
+/// proof-compatible.
+pub fn check_proof_compatible(type_info: &TypeInfo, program: &Vec<NormCommand>) {
+    for command in program {
+        let ctx = command.metadata.id;
+        match &command.command {
+            NCommand::NormRule {
+                name: _,
+                ruleset: _,
+                rule,
+            } => {
+                for action in &rule.head {
+                    if let NormAction::Let(_lhs, call) = action {
+                        let func_type = type_info.lookup_expr(ctx, call).unwrap();
+                        // the function must be a datatype.
+                        // This should be fixed by https://github.com/egraphs-good/egglog/issues/228
+                        // In the future, but for now we disallow these rules
+                        if !func_type.is_primitive && !func_type.is_datatype {
+                            panic!("Calling non-datatype functions in actions is not supported by proofs. See issue #228. Tried to call {}", call);
+                        }
+                    }
+                }
+            }
+            NCommand::NormAction(NormAction::Let(_lhs, call)) => {
+                let func_type = type_info.lookup_expr(ctx, call).unwrap();
+                if !func_type.is_primitive && !func_type.is_datatype {
+                    panic!("Calling non-datatype functions in actions is not supported by proofs. See issue #228");
+                }
+            }
+            _ => (),
+        }
     }
 }
