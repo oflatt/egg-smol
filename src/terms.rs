@@ -85,7 +85,7 @@ impl ProofState {
                     self.union(fdecl.schema.output, "lhs", "rhs")
                 )
             } else {
-                format!("(set ({op} {children_updated}) lhs)")
+                format!("(set ({op} {children_updated_names_together}) lhs)")
             },
             self.rebuilding_ruleset_name()
         );
