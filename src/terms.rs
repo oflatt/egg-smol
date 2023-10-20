@@ -45,7 +45,7 @@ impl ProofState {
         let op = fdecl.name;
         let pname = self.parent_name(fdecl.schema.output);
         let child = |i| format!("c{i}_");
-        let child_parent = |i| {
+        let mut child_parent = |i| {
             #[allow(clippy::iter_nth)]
             let child_t: ArcSort = types.input.iter().nth(i).unwrap().clone();
             self.wrap_parent_or_rebuild(child(i), child_t)
@@ -58,11 +58,16 @@ impl ProofState {
                 " "
             )
         );
+        let children_updated_names = (0..fdecl.schema.input.len())
+            .map(|i| format!("c{}_updated", i))
+            .collect::<Vec<_>>();
+        let children_updated_names_together = ListDisplay(children_updated_names.clone(), " ");
+
         let children_updated = format!(
             "{}",
             ListDisplay(
                 (0..fdecl.schema.input.len())
-                    .map(child_parent)
+                    .map(|i| format!("(= {} {})", children_updated_names[i], child_parent(i)))
                     .collect::<Vec<_>>(),
                 " "
             )
@@ -74,7 +79,7 @@ impl ProofState {
                     :ruleset {})",
             if types.is_datatype {
                 format!(
-                    "(let rhs ({op} {children_updated}))
+                    "(let rhs ({op} {children_updated_names_together}))
                      (set ({pname} rhs) rhs)
                      {}",
                     self.union(fdecl.schema.output, "lhs", "rhs")
