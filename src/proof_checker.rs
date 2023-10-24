@@ -384,10 +384,6 @@ impl<'a> ProofChecker<'a> {
                     | NormAction::Delete(_)
                     | NormAction::Panic(_) => continue 'actions,
                 };
-                eprintln!(
-                    "Resulting term: {}",
-                    self.termdag.to_string(&resulting_term)
-                );
 
                 // we have proven our term, return from the function
                 if resulting_term == to_prove_unwrapped {
@@ -455,7 +451,10 @@ impl<'a> ProofChecker<'a> {
                         // Ordering is always called on terms which are in the database,
                         // so it should be the case that the ids are Values
                         TermId::Value(v) => v,
-                        _ => panic!("Expected a value in ordering-max"),
+                        _ => panic!(
+                            "Expected a value in ordering-max on term: {}",
+                            self.termdag.to_string(&term)
+                        ),
                     })
                     .collect();
 
