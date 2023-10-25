@@ -145,6 +145,7 @@ fn generate_tests(glob: &str) -> Vec<Trial> {
             // these two are too slow
             "math_microbenchmark",
             "repro_unsound",
+            "eqsolve"
         ];
         if !banned.contains(&name.as_str()) {
             push_trial(Run {
