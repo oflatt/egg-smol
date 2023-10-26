@@ -184,7 +184,6 @@ impl TypeInfo {
             }
             NCommand::Check(facts) => {
                 self.typecheck_facts(id, facts)?;
-                self.verify_normal_form_facts(facts);
             }
             NCommand::Fail(cmd) => {
                 self.typecheck_ncommand(cmd, id)?;
@@ -199,27 +198,26 @@ impl TypeInfo {
         Ok(())
     }
 
-    fn typecheck_schedule(&mut self, schedule: &NormSchedule) -> Result<(), TypeError> {
+    fn typecheck_schedule(&mut self, ctx: CommandId, schedule: &Schedule) -> Result<(), TypeError> {
         match schedule {
-            NormSchedule::Repeat(_times, schedule) => {
-                self.typecheck_schedule(schedule)?;
+            Schedule::Repeat(_times, schedule) => {
+                self.typecheck_schedule(ctx, schedule)?;
             }
-            NormSchedule::Sequence(schedules) => {
+            Schedule::Sequence(schedules) => {
                 for schedule in schedules {
                     self.typecheck_schedule(schedule)?;
                 }
             }
-            NormSchedule::Saturate(schedule) => {
-                self.typecheck_schedule(schedule)?;
+            Schedule::Saturate(schedule) => {
+                self.typecheck_schedule(ctx, schedule)?;
             }
-            NormSchedule::Run(run_config) => {
+            Schedule::Run(run_config) => {
                 if let Some(facts) = &run_config.until {
                     assert!(self
                         .local_types
                         .insert(run_config.ctx, Default::default())
                         .is_none());
                     self.typecheck_facts(run_config.ctx, facts)?;
-                    self.verify_normal_form_facts(facts);
                 }
             }
         }
@@ -262,8 +260,6 @@ impl TypeInfo {
         // also check the validity of the ssa
         self.typecheck_facts(ctx, &rule.body)?;
         self.typecheck_actions(ctx, &rule.head)?;
-        let mut bindings = self.verify_normal_form_facts(&rule.body);
-        self.verify_normal_form_actions(&rule.head, &mut bindings);
         Ok(())
     }
 
@@ -301,49 +297,6 @@ impl TypeInfo {
             self.typecheck_action(ctx, action, false)?;
         }
         Ok(())
-    }
-
-    fn verify_normal_form_facts(&self, facts: &Vec<NormFact>) -> HashSet<Symbol> {
-        let mut let_bound: HashSet<Symbol> = Default::default();
-
-        for fact in facts {
-            match fact {
-                NormFact::Compute(var, NormExpr::Call(_head, body)) => {
-                    assert!(!self.global_types.contains_key(var));
-                    assert!(let_bound.insert(*var));
-                    body.iter().for_each(|bvar| {
-                        if !self.global_types.contains_key(bvar) {
-                            assert!(let_bound.contains(bvar));
-                        }
-                    });
-                }
-                NormFact::Assign(var, NormExpr::Call(_head, body)) => {
-                    assert!(!self.global_types.contains_key(var));
-                    assert!(let_bound.insert(*var));
-                    body.iter().for_each(|bvar| {
-                        assert!(!self.global_types.contains_key(bvar));
-                        assert!(let_bound.insert(*bvar), "Expected {} to be bound", bvar);
-                    });
-                }
-                NormFact::AssignVar(lhs, _rhs) => {
-                    assert!(!self.global_types.contains_key(lhs));
-                    assert!(let_bound.insert(*lhs));
-                }
-                NormFact::AssignLit(var, _lit) => {
-                    assert!(let_bound.insert(*var));
-                }
-                NormFact::ConstrainEq(var1, var2) => {
-                    if !let_bound.contains(var1)
-                        && !let_bound.contains(var2)
-                        && !self.global_types.contains_key(var1)
-                        && !self.global_types.contains_key(var2)
-                    {
-                        panic!("ConstrainEq on unbound variables");
-                    }
-                }
-            }
-        }
-        let_bound
     }
 
     fn verify_normal_form_actions(

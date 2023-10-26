@@ -208,16 +208,16 @@ impl<'a> TermState<'a> {
     /// Instrument fact replaces terms with looking up
     /// canonical versions in the view.
     /// It also needs to look up references to globals.
-    fn instrument_fact(&mut self, fact: &NormFact) -> Fact {
+    fn instrument_fact(&mut self, fact: &Fact) -> Fact {
         match fact {
-            NormFact::Assign(lhs, NormExpr::Call(head, body)) => {
+            Fact::Assign(lhs, NormExpr::Call(head, body)) => {
                 let func_type = self
                     .type_info()
                     .lookup_expr(self.current_ctx, &NormExpr::Call(*head, body.clone()))
                     .unwrap();
                 if func_type.is_datatype {
                     let view_name = self.view_name(*head);
-                    NormFact::Assign(*lhs, NormExpr::Call(view_name, body.clone()))
+                    Fact::Assign(*lhs, NormExpr::Call(view_name, body.clone()))
                 } else {
                     fact.clone()
                 }
@@ -254,7 +254,7 @@ impl<'a> TermState<'a> {
         }
     }
 
-    fn instrument_facts(&mut self, facts: &[NormFact]) -> Vec<Fact> {
+    fn instrument_facts(&mut self, facts: &[Fact]) -> Vec<Fact> {
         facts.iter().map(|f| self.instrument_fact(f)).collect()
     }
 
@@ -414,8 +414,8 @@ impl<'a> TermState<'a> {
         .saturate()
     }
 
-    fn instrument_schedule(&mut self, schedule: &NormSchedule) -> Schedule {
-        schedule.map_run_commands(&mut |run_config| {
+    fn instrument_schedule(&mut self, schedule: &Schedule) -> Schedule {
+        schedule.map_run_commands(|run_config: &RunConfig| {
             Schedule::Sequence(vec![
                 self.rebuild(),
                 Schedule::Run(RunConfig {

@@ -777,10 +777,10 @@ impl EGraph {
     }
 
     // returns whether the egraph was updated
-    pub fn run_schedule(&mut self, sched: &NormSchedule) -> RunReport {
+    pub fn run_schedule(&mut self, sched: &Schedule) -> RunReport {
         match sched {
-            NormSchedule::Run(config) => self.run_rules(config),
-            NormSchedule::Repeat(limit, sched) => {
+            Schedule::Run(config) => self.run_rules(config),
+            Schedule::Repeat(limit, sched) => {
                 let mut report = RunReport::default();
                 for _i in 0..*limit {
                     let rec = self.run_schedule(sched);
@@ -791,7 +791,7 @@ impl EGraph {
                 }
                 report
             }
-            NormSchedule::Saturate(sched) => {
+            Schedule::Saturate(sched) => {
                 let mut report = RunReport::default();
                 loop {
                     let rec = self.run_schedule(sched);
@@ -802,7 +802,7 @@ impl EGraph {
                 }
                 report
             }
-            NormSchedule::Sequence(scheds) => {
+            Schedule::Sequence(scheds) => {
                 let mut report = RunReport::default();
                 for sched in scheds {
                     report = report.union(&self.run_schedule(sched));
@@ -829,7 +829,7 @@ impl EGraph {
         termdag.to_string(&term)
     }
 
-    pub fn run_rules(&mut self, config: &NormRunConfig) -> RunReport {
+    pub fn run_rules(&mut self, config: &RunConfig) -> RunReport {
         let mut report: RunReport = Default::default();
 
         // first rebuild
@@ -844,11 +844,7 @@ impl EGraph {
             .or_insert(Duration::default()) += rebuild_start.elapsed();
         self.timestamp += 1;
 
-        let NormRunConfig {
-            ruleset,
-            until,
-            ctx,
-        } = config;
+        let NormRunConfig { ruleset, until } = config;
 
         if let Some(facts) = until {
             if self.check_facts(*ctx, facts).is_ok() {
@@ -1123,7 +1119,7 @@ impl EGraph {
         }
     }
 
-    fn check_facts(&mut self, ctx: CommandId, facts: &[NormFact]) -> Result<(), Error> {
+    fn check_facts(&mut self, ctx: CommandId, facts: &[Fact]) -> Result<(), Error> {
         let mut compiler = typecheck::Context::new(self);
         let rule = NormRule {
             head: vec![],
@@ -1549,7 +1545,7 @@ pub enum Error {
     #[error("Errors:\n{}", ListDisplay(.0, "\n"))]
     TypeErrors(Vec<TypeError>),
     #[error("Check failed: \n{}", ListDisplay(.0, "\n"))]
-    CheckError(Vec<NormFact>),
+    CheckError(Vec<Fact>),
     #[error("Evaluating primitive {0:?} failed. ({0:?} {:?})", ListDebug(.1, " "))]
     PrimitiveError(Primitive, Vec<Value>),
     #[error("Illegal merge attempted for function {0}, {1:?} != {2:?}")]
