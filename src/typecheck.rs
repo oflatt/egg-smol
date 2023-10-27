@@ -99,7 +99,7 @@ impl UnresolvedCoreRule {
     }
 }
 
-pub(crate) fn facts_to_query(body: &Vec<NormFact>, typeinfo: &TypeInfo) -> Query<SymbolOrEq> {
+pub(crate) fn facts_to_query(body: &Vec<Fact>, typeinfo: &TypeInfo) -> Query<SymbolOrEq> {
     fn to_atom_term(s: Symbol, typeinfo: &TypeInfo) -> AtomTerm {
         if typeinfo.is_global(s) {
             AtomTerm::Global(s)

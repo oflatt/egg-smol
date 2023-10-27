@@ -777,10 +777,10 @@ impl EGraph {
     }
 
     // returns whether the egraph was updated
-    pub fn run_schedule(&mut self, sched: &Schedule) -> RunReport {
+    pub fn run_schedule(&mut self, sched: &NormSchedule) -> RunReport {
         match sched {
-            Schedule::Run(config) => self.run_rules(config),
-            Schedule::Repeat(limit, sched) => {
+            NormSchedule::Run(config) => self.run_rules(config),
+            NormSchedule::Repeat(limit, sched) => {
                 let mut report = RunReport::default();
                 for _i in 0..*limit {
                     let rec = self.run_schedule(sched);
@@ -791,7 +791,7 @@ impl EGraph {
                 }
                 report
             }
-            Schedule::Saturate(sched) => {
+            NormSchedule::Saturate(sched) => {
                 let mut report = RunReport::default();
                 loop {
                     let rec = self.run_schedule(sched);
@@ -802,7 +802,7 @@ impl EGraph {
                 }
                 report
             }
-            Schedule::Sequence(scheds) => {
+            NormSchedule::Sequence(scheds) => {
                 let mut report = RunReport::default();
                 for sched in scheds {
                     report = report.union(&self.run_schedule(sched));
@@ -829,7 +829,7 @@ impl EGraph {
         termdag.to_string(&term)
     }
 
-    pub fn run_rules(&mut self, config: &RunConfig) -> RunReport {
+    pub fn run_rules(&mut self, config: &NormRunConfig) -> RunReport {
         let mut report: RunReport = Default::default();
 
         // first rebuild
@@ -844,7 +844,11 @@ impl EGraph {
             .or_insert(Duration::default()) += rebuild_start.elapsed();
         self.timestamp += 1;
 
-        let NormRunConfig { ruleset, until } = config;
+        let NormRunConfig {
+            ruleset,
+            until,
+            ctx,
+        } = config;
 
         if let Some(facts) = until {
             if self.check_facts(*ctx, facts).is_ok() {

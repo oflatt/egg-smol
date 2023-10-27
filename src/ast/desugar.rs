@@ -227,6 +227,39 @@ impl Default for Desugar {
     }
 }
 
+fn desugar_run_config(desugar: &mut Desugar, run_config: &RunConfig) -> NormRunConfig {
+    let RunConfig { ruleset, until } = run_config;
+    NormRunConfig {
+        ctx: desugar.get_new_id(),
+        ruleset: *ruleset,
+        until: until.clone(),
+    }
+}
+
+fn desugar_schedule(desugar: &mut Desugar, schedule: &Schedule) -> NormSchedule {
+    match schedule {
+        Schedule::Repeat(num, schedule) => {
+            let norm_schedule = desugar_schedule(desugar, schedule);
+            NormSchedule::Repeat(*num, Box::new(norm_schedule))
+        }
+        Schedule::Saturate(schedule) => {
+            let norm_schedule = desugar_schedule(desugar, schedule);
+            NormSchedule::Saturate(Box::new(norm_schedule))
+        }
+        Schedule::Run(run_config) => {
+            let norm_run_config = desugar_run_config(desugar, run_config);
+            NormSchedule::Run(norm_run_config)
+        }
+        Schedule::Sequence(schedules) => {
+            let norm_schedules = schedules
+                .iter()
+                .map(|schedule| desugar_schedule(desugar, schedule))
+                .collect();
+            NormSchedule::Sequence(norm_schedules)
+        }
+    }
+}
+
 pub(crate) fn desugar_simplify(
     desugar: &mut Desugar,
     expr: &Expr,
@@ -239,7 +272,7 @@ pub(crate) fn desugar_simplify(
             .into_iter()
             .map(NCommand::NormAction),
     );
-    res.push(NCommand::RunSchedule(schedule.clone()));
+    res.push(NCommand::RunSchedule(desugar_schedule(desugar, schedule)));
     res.extend(
         desugar_command(
             Command::QueryExtract {
@@ -378,7 +411,7 @@ pub(crate) fn desugar_command(
         Command::Simplify { expr, schedule } => desugar_simplify(desugar, &expr, &schedule),
         Command::Calc(idents, exprs) => desugar_calc(desugar, idents, exprs, seminaive_transform)?,
         Command::RunSchedule(sched) => {
-            vec![NCommand::RunSchedule(sched.clone())]
+            vec![NCommand::RunSchedule(desugar_schedule(desugar, &sched))]
         }
         Command::PrintOverallStatistics => {
             vec![NCommand::PrintOverallStatistics]

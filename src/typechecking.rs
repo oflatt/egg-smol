@@ -198,20 +198,20 @@ impl TypeInfo {
         Ok(())
     }
 
-    fn typecheck_schedule(&mut self, ctx: CommandId, schedule: &Schedule) -> Result<(), TypeError> {
+    fn typecheck_schedule(&mut self, schedule: &NormSchedule) -> Result<(), TypeError> {
         match schedule {
-            Schedule::Repeat(_times, schedule) => {
-                self.typecheck_schedule(ctx, schedule)?;
+            NormSchedule::Repeat(_times, schedule) => {
+                self.typecheck_schedule(schedule)?;
             }
-            Schedule::Sequence(schedules) => {
+            NormSchedule::Sequence(schedules) => {
                 for schedule in schedules {
                     self.typecheck_schedule(schedule)?;
                 }
             }
-            Schedule::Saturate(schedule) => {
-                self.typecheck_schedule(ctx, schedule)?;
+            NormSchedule::Saturate(schedule) => {
+                self.typecheck_schedule(schedule)?;
             }
-            Schedule::Run(run_config) => {
+            NormSchedule::Run(run_config) => {
                 if let Some(facts) = &run_config.until {
                     assert!(self
                         .local_types
@@ -263,7 +263,7 @@ impl TypeInfo {
         Ok(())
     }
 
-    fn typecheck_facts(&mut self, ctx: CommandId, facts: &Vec<NormFact>) -> Result<(), TypeError> {
+    fn typecheck_facts(&mut self, ctx: CommandId, facts: &Vec<Fact>) -> Result<(), TypeError> {
         // ROUND TRIP TO CORE RULE AND BACK
         // TODO: in long term, we don't want this round trip to CoreRule query and back just for the type information.
         let query = facts_to_query(facts, self);

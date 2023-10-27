@@ -97,7 +97,7 @@ pub enum NCommand {
         rule: NormRule,
     },
     NormAction(NormAction),
-    RunSchedule(Schedule),
+    RunSchedule(NormSchedule),
     PrintOverallStatistics,
     Check(Vec<Fact>),
     CheckProof,
@@ -142,7 +142,7 @@ impl NCommand {
                 ruleset: *ruleset,
                 rule: rule.to_rule(),
             },
-            NCommand::RunSchedule(schedule) => Command::RunSchedule(schedule.clone()),
+            NCommand::RunSchedule(schedule) => Command::RunSchedule(schedule.to_schedule()),
             NCommand::PrintOverallStatistics => Command::PrintOverallStatistics,
             NCommand::NormAction(action) => Command::Action(action.to_action()),
             NCommand::Check(facts) => Command::Check(facts.clone()),
@@ -170,6 +170,63 @@ pub enum Schedule {
     Repeat(usize, Box<Schedule>),
     Run(RunConfig),
     Sequence(Vec<Schedule>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct NormRunConfig {
+    pub ctx: CommandId,
+    pub ruleset: Symbol,
+    pub until: Option<Vec<Fact>>,
+}
+
+impl NormRunConfig {
+    pub fn to_run_config(&self) -> RunConfig {
+        RunConfig {
+            ruleset: self.ruleset,
+            until: self.until.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum NormSchedule {
+    Saturate(Box<NormSchedule>),
+    Repeat(usize, Box<NormSchedule>),
+    Run(NormRunConfig),
+    Sequence(Vec<NormSchedule>),
+}
+
+impl NormSchedule {
+    fn to_schedule(&self) -> Schedule {
+        match self {
+            NormSchedule::Saturate(sched) => Schedule::Saturate(Box::new(sched.to_schedule())),
+            NormSchedule::Repeat(size, sched) => {
+                Schedule::Repeat(*size, Box::new(sched.to_schedule()))
+            }
+            NormSchedule::Run(config) => Schedule::Run(config.to_run_config()),
+            NormSchedule::Sequence(scheds) => {
+                Schedule::Sequence(scheds.iter().map(|sched| sched.to_schedule()).collect())
+            }
+        }
+    }
+
+    pub fn map_run_commands(&self, f: &mut impl FnMut(&NormRunConfig) -> Schedule) -> Schedule {
+        match self {
+            NormSchedule::Run(config) => f(config),
+            NormSchedule::Saturate(sched) => {
+                Schedule::Saturate(Box::new(sched.map_run_commands(f)))
+            }
+            NormSchedule::Repeat(size, sched) => {
+                Schedule::Repeat(*size, Box::new(sched.map_run_commands(f)))
+            }
+            NormSchedule::Sequence(scheds) => Schedule::Sequence(
+                scheds
+                    .iter()
+                    .map(|sched| sched.map_run_commands(f))
+                    .collect(),
+            ),
+        }
+    }
 }
 
 impl Schedule {
@@ -240,6 +297,12 @@ impl ToSexp for Schedule {
             Schedule::Run(config) => config.to_sexp(),
             Schedule::Sequence(scheds) => list!("seq", ++ scheds),
         }
+    }
+}
+
+impl Display for NormSchedule {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_schedule())
     }
 }
 
@@ -704,13 +767,6 @@ impl ToSexp for RunConfig {
 
         Sexp::List(res)
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct NormRunConfig {
-    pub ctx: CommandId,
-    pub ruleset: Symbol,
-    pub until: Option<Vec<Fact>>,
 }
 
 /// A normalized function declaration- the desugared
