@@ -348,8 +348,12 @@ impl ProofState {
                 }]
             }
             NCommand::GetProof(..) => panic!("GetProof should have been desugared"),
-            NCommand::LookupProof(expr) => self
-                .parse_actions(vec![format!("(print {})", self.get_proof(expr, None))])
+            NCommand::LookupProof(expr, print_tree) => self
+                .parse_actions(vec![format!(
+                    "(print {} {})",
+                    self.get_proof(expr, None),
+                    if *print_tree { "" } else { ":dag" }
+                )])
                 .into_iter()
                 .map(Command::Action)
                 .collect(),

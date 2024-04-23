@@ -177,7 +177,7 @@ impl<'a> ProofChecker<'a> {
     }
 
     fn string_from_term(&self, term: Term) -> String {
-        let with_quotes = self.termdag.to_string(&term);
+        let with_quotes = self.termdag.to_string(&term, &true);
         assert!(with_quotes.len() >= 2);
         assert!(with_quotes.starts_with('"'));
         assert!(with_quotes.ends_with('"'));
@@ -225,7 +225,7 @@ impl<'a> ProofChecker<'a> {
             assert!(args.len() == 1);
             let unwrapped = self.termdag.get_term(args[0]);
             let Term::App(data_head, args) = unwrapped.clone() else {
-                    panic!("Expected a datatype wrapper. Got: {}", self.termdag.to_string(&unwrapped))
+                    panic!("Expected a datatype wrapper. Got: {}", self.termdag.to_string(&unwrapped, &true))
                 };
             assert!(data_head.as_str() == stripped);
             (
@@ -290,7 +290,7 @@ impl<'a> ProofChecker<'a> {
                             name,
                             "Expected operators to match: {} != {}",
                             &NormExpr::Call(*op, body.clone()),
-                            self.termdag.to_string(&current_term)
+                            self.termdag.to_string(&current_term, &true)
                         );
                         assert_eq!(body.len(), inputs.len());
                         for (arg, targ) in body.iter().zip(inputs) {
@@ -322,8 +322,8 @@ impl<'a> ProofChecker<'a> {
                             self.get_term(&rule_ctx, *var_a),
                             self.get_term(&rule_ctx, *var_b),
                             "Expected terms to be equal in rule proof: {} != {} with variables {} and {}",
-                            self.termdag.to_string(&self.get_term(&rule_ctx, *var_a)),
-                            self.termdag.to_string(&self.get_term(&rule_ctx, *var_b)),
+                            self.termdag.to_string(&self.get_term(&rule_ctx, *var_a), &true),
+                            self.termdag.to_string(&self.get_term(&rule_ctx, *var_b), &true),
                             var_a,
                             var_b
                         );
@@ -498,7 +498,7 @@ impl<'a> ProofChecker<'a> {
                 let output = primitive.apply(&body_vals, self.egraph).unwrap_or_else(|| {
                     panic!(
                         "Proof checking failed- primitive did not return a value. Primitive term: {}",
-                        self.termdag.to_string(&term)
+                        self.termdag.to_string(&term, &true)
                     )
                 });
 

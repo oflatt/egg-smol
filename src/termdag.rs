@@ -174,8 +174,8 @@ impl TermDag {
                 New: {}\n",
                 old.clone().unwrap(),
                 node,
-                self.to_string(&old.unwrap()),
-                self.to_string(&node),
+                self.to_string(&old.unwrap(), &true),
+                self.to_string(&node, &true),
             );
             new_id
         }
@@ -197,40 +197,159 @@ impl TermDag {
         }
     }
 
-    pub fn to_string(&self, term: &Term) -> String {
-        let mut stored = HashMap::<TermId, String>::default();
-        let mut seen = HashSet::default();
-        let id = self.get_id(term);
-        // use a stack to avoid stack overflow
-        let mut stack = vec![id];
-        while !stack.is_empty() {
-            let next = stack.pop().unwrap();
+    fn term_id_to_string(&self, val: &TermId) -> String {
+        match val {
+            TermId::Value(v) => format!("Tag: {} Bits: {}", v.tag, v.bits),
+            TermId::Num(n) => format!("Num: {}", n),
+        }
+    }
 
-            match self.nodes.get(&next).unwrap().clone() {
-                Term::App(name, children) => {
-                    if seen.contains(&next) {
-                        let mut str = String::new();
-                        str.push_str(&format!("({}", name));
-                        for c in children.iter() {
-                            str.push_str(&format!(" {}", stored[c]));
+    pub fn to_string(&self, term: &Term, print_tree: &bool) -> String {
+        if *print_tree {
+            // Tree output
+            let mut stored = HashMap::<TermId, String>::default();
+            let mut seen = HashSet::default();
+            let id = self.get_id(term);
+            // use a stack to avoid stack overflow
+            let mut stack = vec![id];
+            while !stack.is_empty() {
+                let next = stack.pop().unwrap();
+
+                match self.nodes.get(&next).unwrap().clone() {
+                    Term::App(name, children) => {
+                        if seen.contains(&next) {
+                            let mut str = String::new();
+                            str.push_str(&format!("({}", name));
+                            for c in children.iter() {
+                                str.push_str(&format!(" {}", stored[c]));
+                            }
+                            str.push(')');
+                            stored.insert(next, str);
+                        } else {
+                            seen.insert(next);
+                            stack.push(next);
+                            for c in children.iter().rev() {
+                                stack.push(*c);
+                            }
                         }
-                        str.push(')');
-                        stored.insert(next, str);
-                    } else {
+                    }
+                    Term::Lit(lit) => {
+                        stored.insert(next, format!("{}", lit));
+                    }
+                }
+            }
+
+            stored.get(&id).unwrap().clone()
+        } else {
+            // DAG output
+            let mut stored: HashMap<TermId, String> = HashMap::default();
+            let mut adj_list: HashMap<TermId, Vec<i32>> = HashMap::default();
+            let mut seen = HashSet::default();
+            // Maps term IDs to their new homemade IDs
+            let mut term_id_map: HashMap<TermId, i32> = HashMap::default();
+            let mut term_id_insertion_order: Vec<TermId> = Vec::default();
+            // Maps values to their term IDs
+            let mut value_map = HashMap::<i32, TermId>::default();
+            let mut counter = 0;
+            let id = self.get_id(term);
+            let mut stack = vec![id];
+
+            //Initial numbering
+            while !stack.is_empty() {
+                let next: TermId = stack.pop().unwrap();
+                if !seen.contains(&next) {
+                    // Give a homemade id number to it
+                    term_id_insertion_order.push(next);
+                    term_id_map.insert(next, counter);
+                    counter = counter + 1;
+                    if let TermId::Value(v) = next {
+                        value_map.insert(v.bits as i32, next);
+                    }
+                }
+                if let Term::App(_, children) = self.nodes.get(&next).unwrap().clone() {
+                    if !seen.contains(&next) {
+                        // Add the children to get numbered
                         seen.insert(next);
-                        stack.push(next);
                         for c in children.iter().rev() {
                             stack.push(*c);
                         }
                     }
                 }
-                Term::Lit(lit) => {
-                    stored.insert(next, format!("{}", lit));
+            }
+
+            // Renumber homemade IDs for values to have the same ordering as the original IDs
+            let mut values = value_map.keys().collect::<Vec<_>>();
+            let mut homemade_value_ids = value_map
+                .iter()
+                .map(|(k, v)| *term_id_map.get(v).unwrap())
+                .collect::<Vec<_>>();
+
+            values.sort();
+            homemade_value_ids.sort();
+
+            for (i, v) in values.iter().enumerate() {
+                term_id_map.insert(value_map[*v], homemade_value_ids[i]);
+            }
+
+            seen.clear();
+            stack = vec![id];
+
+            // Construct the adjacency list for the Terms with the new IDs
+            while !stack.is_empty() {
+                let next: TermId = stack.pop().unwrap();
+                match self.nodes.get(&next).unwrap().clone() {
+                    Term::App(name, children) => {
+                        if !seen.contains(&next) {
+                            // Construct the string for the children
+                            seen.insert(next);
+                            for c in children.iter().rev() {
+                                stack.push(*c);
+                            }
+
+                            seen.insert(next);
+                            // Construct the string for this node
+                            let mut str = String::new();
+                            let mut edges: Vec<i32> = Vec::default();
+                            str.push_str(&format!(
+                                "(Term: {}, ({}",
+                                term_id_map.get(&next).unwrap().to_string().as_str(),
+                                name
+                            ));
+                            for c in children.iter() {
+                                str.push_str(&format!(
+                                    " (Term: {})",
+                                    term_id_map.get(c).unwrap().to_string().as_str()
+                                ));
+                                edges.push(*term_id_map.get(c).unwrap());
+                            }
+                            str.push_str("))");
+                            adj_list.insert(next, edges);
+                            stored.insert(next, str);
+                        }
+                    }
+                    Term::Lit(lit) => {
+                        adj_list.insert(next, Vec::default());
+                        stored.insert(
+                            next,
+                            format!(
+                                "(Term: {}, {})",
+                                term_id_map.get(&next).unwrap().to_string().as_str(),
+                                lit
+                            ),
+                        );
+                    }
                 }
             }
-        }
 
-        stored.get(&id).unwrap().clone()
+            // Construct DAG output
+            let mut str = String::new();
+            str.push('\n');
+            for id in term_id_insertion_order.iter() {
+                str.push_str(stored.get(id).unwrap());
+                str.push('\n');
+            }
+            str
+        }
     }
 
     pub fn display_entry(&self, entry: &FunctionEntry) -> String {
@@ -238,14 +357,14 @@ impl TermDag {
             format!(
                 "({} {})",
                 entry.name,
-                ListDisplay(entry.inputs.iter().map(|t| self.to_string(t)), " "),
+                ListDisplay(entry.inputs.iter().map(|t| self.to_string(t, &true)), " "),
             )
         } else {
             format!(
                 "({} {}) -> {}",
                 entry.name,
-                ListDisplay(entry.inputs.iter().map(|t| self.to_string(t)), " "),
-                self.to_string(&entry.output)
+                ListDisplay(entry.inputs.iter().map(|t| self.to_string(t, &true)), " "),
+                self.to_string(&entry.output, &true)
             )
         }
     }

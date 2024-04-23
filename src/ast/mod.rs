@@ -116,8 +116,8 @@ pub enum NCommand {
         name: Symbol,
         file: String,
     },
-    GetProof(Vec<NormFact>),
-    LookupProof(NormExpr),
+    GetProof(Vec<NormFact>, bool),
+    LookupProof(NormExpr, bool),
 }
 
 impl NormCommand {
@@ -151,10 +151,11 @@ impl NCommand {
                 Command::Check(facts.iter().map(|fact| fact.to_fact()).collect())
             }
             NCommand::CheckProof => Command::CheckProof,
-            NCommand::GetProof(query) => {
-                Command::GetProof(query.iter().map(|fact| fact.to_fact()).collect::<Vec<_>>())
-            }
-            NCommand::LookupProof(expr) => Command::LookupProof(expr.to_expr()),
+            NCommand::GetProof(query, print_tree) => Command::GetProof(
+                query.iter().map(|fact| fact.to_fact()).collect::<Vec<_>>(),
+                *print_tree,
+            ),
+            NCommand::LookupProof(expr, print_tree) => Command::LookupProof(expr.to_expr(), *print_tree),
             NCommand::PrintTable(name, n) => Command::PrintTable(*name, *n),
             NCommand::PrintSize(name) => Command::PrintSize(*name),
             NCommand::Output { file, exprs } => Command::Output {
@@ -196,10 +197,11 @@ impl NCommand {
                 NCommand::Check(facts.iter().map(|fact| fact.map_exprs(f)).collect())
             }
             NCommand::CheckProof => NCommand::CheckProof,
-            NCommand::GetProof(query) => {
-                NCommand::GetProof(query.iter().map(|fact| fact.map_exprs(f)).collect())
-            }
-            NCommand::LookupProof(expr) => NCommand::LookupProof(f(expr)),
+            NCommand::GetProof(query, print_tree) => NCommand::GetProof(
+                query.iter().map(|fact| fact.map_exprs(f)).collect(),
+                *print_tree,
+            ),
+            NCommand::LookupProof(expr, print_tree) => NCommand::LookupProof(f(expr), *print_tree),
             NCommand::PrintTable(name, n) => NCommand::PrintTable(*name, *n),
             NCommand::PrintSize(name) => NCommand::PrintSize(*name),
             NCommand::Output { file, exprs } => NCommand::Output {
@@ -368,8 +370,8 @@ pub enum Command {
     // TODO: this could just become an empty query
     Check(Vec<Fact>),
     CheckProof,
-    GetProof(Vec<Fact>),
-    LookupProof(Expr),
+    GetProof(Vec<Fact>, bool),
+    LookupProof(Expr, bool),
     PrintTable(Symbol, usize),
     PrintSize(Symbol),
     Input {
@@ -410,8 +412,13 @@ impl ToSexp for Command {
             Command::Extract { variants, fact } => list!("extract", ":variants", variants, fact),
             Command::Check(facts) => list!("check", ++ facts),
             Command::CheckProof => list!("check-proof"),
-            Command::GetProof(query) => list!("get-proof", ++ query),
-            Command::LookupProof(expr) => list!("lookup-proof", expr),
+            Command::GetProof(query, print_tree) => {
+                list!(
+                    list!("get-proof", ++ query),
+                    if *print_tree { "" } else { ":dag" }
+                )
+            }
+            Command::LookupProof(expr, print_tree) => list!("lookup-proof", expr, if *print_tree { "" } else { ":dag" }),
             Command::Push(n) => list!("push", n),
             Command::Pop(n) => list!("pop", n),
             Command::PrintTable(name, n) => list!("print-table", name, n),
@@ -762,7 +769,7 @@ pub enum Action {
     Union(Expr, Expr),
     // What to extract and how many variants
     Extract(Expr, Expr),
-    Print(Expr),
+    Print(Expr, bool),
     Panic(String),
     Expr(Expr),
     // If(Expr, Action, Action),
@@ -774,7 +781,7 @@ pub enum NormAction {
     LetVar(Symbol, Symbol),
     LetLit(Symbol, Literal),
     Extract(Symbol, Symbol),
-    Print(Symbol),
+    Print(Symbol, bool),
     Set(NormExpr, Symbol),
     Delete(NormExpr),
     Union(Symbol, Symbol),
@@ -795,7 +802,7 @@ impl NormAction {
             NormAction::Extract(symbol, variants) => {
                 Action::Extract(Expr::Var(*symbol), Expr::Var(*variants))
             }
-            NormAction::Print(symbol) => Action::Print(Expr::Var(*symbol)),
+            NormAction::Print(symbol, print_tree) => Action::Print(Expr::Var(*symbol), *print_tree),
             NormAction::Delete(NormExpr::Call(symbol, args)) => {
                 Action::Delete(*symbol, args.iter().map(|s| Expr::Var(*s)).collect())
             }
@@ -811,7 +818,7 @@ impl NormAction {
             NormAction::LetLit(symbol, lit) => NormAction::LetLit(*symbol, lit.clone()),
             NormAction::Set(expr, other) => NormAction::Set(f(expr), *other),
             NormAction::Extract(var, variants) => NormAction::Extract(*var, *variants),
-            NormAction::Print(var) => NormAction::Print(*var),
+            NormAction::Print(var, print_tree) => NormAction::Print(*var, *print_tree),
             NormAction::Delete(expr) => NormAction::Delete(f(expr)),
             NormAction::Union(lhs, rhs) => NormAction::Union(*lhs, *rhs),
             NormAction::Panic(msg) => NormAction::Panic(msg.clone()),
@@ -834,7 +841,7 @@ impl NormAction {
             NormAction::Extract(var, variants) => {
                 NormAction::Extract(fvar(*var, false), fvar(*variants, false))
             }
-            NormAction::Print(var) => NormAction::Print(fvar(*var, false)),
+            NormAction::Print(var, print_tree) => NormAction::Print(fvar(*var, false), *print_tree),
             NormAction::Delete(expr) => NormAction::Delete(expr.map_def_use(fvar, false)),
             NormAction::Union(lhs, rhs) => NormAction::Union(fvar(*lhs, false), fvar(*rhs, false)),
             NormAction::Panic(msg) => NormAction::Panic(msg.clone()),
@@ -850,7 +857,9 @@ impl ToSexp for Action {
             Action::Union(lhs, rhs) => list!("union", lhs, rhs),
             Action::Delete(lhs, args) => list!("delete", list!(lhs, ++ args)),
             Action::Extract(expr, variants) => list!("extract", expr, variants),
-            Action::Print(expr) => list!("print", expr),
+            Action::Print(expr, print_tree) => {
+                list!("print", expr, if *print_tree { "" } else { ":dag" })
+            }
             Action::Panic(msg) => list!("panic", format!("\"{}\"", msg.clone())),
             Action::Expr(e) => e.to_sexp(),
         }
@@ -868,7 +877,7 @@ impl Action {
             Action::Delete(lhs, args) => Action::Delete(*lhs, args.iter().map(f).collect()),
             Action::Union(lhs, rhs) => Action::Union(f(lhs), f(rhs)),
             Action::Extract(expr, variants) => Action::Extract(f(expr), f(variants)),
-            Action::Print(expr) => Action::Print(f(expr)),
+            Action::Print(expr, print_tree) => Action::Print(f(expr), *print_tree),
             Action::Panic(msg) => Action::Panic(msg.clone()),
             Action::Expr(e) => Action::Expr(f(e)),
         }
@@ -889,7 +898,7 @@ impl Action {
             Action::Extract(expr, variants) => {
                 Action::Extract(expr.subst(canon), variants.subst(canon))
             }
-            Action::Print(expr) => Action::Print(expr.subst(canon)),
+            Action::Print(expr, print_tree) => Action::Print(expr.subst(canon), *print_tree),
             Action::Panic(msg) => Action::Panic(msg.clone()),
             Action::Expr(e) => Action::Expr(e.subst(canon)),
         }
@@ -1044,10 +1053,10 @@ impl NormRule {
                     used.insert(*variants);
                     head.push(Action::Extract(new_expr, new_expr2));
                 }
-                NormAction::Print(symbol) => {
+                NormAction::Print(symbol, print_tree) => {
                     let new_expr = subst.get(symbol).cloned().unwrap_or(Expr::Var(*symbol));
                     used.insert(*symbol);
-                    head.push(Action::Print(new_expr));
+                    head.push(Action::Print(new_expr, *print_tree));
                 }
                 NormAction::LetLit(symbol, lit) => {
                     subst.insert(*symbol, Expr::Lit(lit.clone()));

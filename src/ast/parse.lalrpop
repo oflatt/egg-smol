@@ -78,8 +78,8 @@ Command: Command = {
     LParen "query-extract" <variants:(":variants" <UNum>)?> <fact:Fact> RParen => Command::Extract { fact, variants: variants.unwrap_or(0) },
     LParen "check" <(Fact)*> RParen => Command::Check(<>),
     LParen "check-proof" RParen => Command::CheckProof,
-    LParen "get-proof" <(Fact)*> RParen => Command::GetProof(<>),
-    LParen "lookup-proof" <Expr> RParen => Command::LookupProof(<>),
+    LParen "get-proof" <facts:(Fact)*> <print_tree:":dag"?>  RParen => Command::GetProof(facts, !print_tree.is_some()),
+    LParen "lookup-proof" <expr:Expr> <print_tree:":dag"?> RParen => Command::LookupProof(expr, !print_tree.is_some()),
     LParen "run-schedule" <Schedule*> RParen => Command::RunSchedule(Schedule::Sequence(<>)),
     LParen "push" <UNum?> RParen => Command::Push(<>.unwrap_or(1)),
     LParen "pop" <UNum?> RParen => Command::Pop(<>.unwrap_or(1)),
@@ -113,7 +113,7 @@ NonLetAction: Action = {
     LParen "panic" <msg:String> RParen => Action::Panic(msg),
     LParen "extract" <expr:Expr> RParen => Action::Extract(expr, Expr::Lit(Literal::Int(0))),
     LParen "extract" <expr:Expr> <variants:Expr> RParen => Action::Extract(expr, variants),
-    LParen "print" <expr:Expr> RParen => Action::Print(expr),
+    LParen "print" <expr:Expr> <print_tree:":dag"?> RParen => Action::Print(expr, !print_tree.is_some()),
     <e:CallExpr> => Action::Expr(e),
 }
 
